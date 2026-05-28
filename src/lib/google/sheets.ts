@@ -1,0 +1,179 @@
+import { google, type sheets_v4 } from "googleapis";
+import type { Credentials } from "google-auth-library";
+import { getOAuthClient } from "./oauth";
+import { getTokensForUser, saveTokensForUser } from "./tokens";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+// Return the user id of the designated "agency reader" — i.e. whichever admin
+// has Google Sheets connected. Client-side pages use this so they can read the
+// Mainsheet even though the client themselves never connected Google. Picks the
+// oldest super_admin token if present, falling back to any admin token.
+async function getDesignatedReaderId(): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("google_oauth_tokens")
+    .select("user_id, profiles!inner(role)")
+    .order("created_at", { ascending: true })
+    .limit(1);
+  return data?.[0]?.user_id ?? null;
+}
+
+// Wrapper used by client-portal pages that need to read the Mainsheet. Resolves
+// to the agency's reader token transparently.
+export async function getAgencySheetsClient(): Promise<sheets_v4.Sheets> {
+  const id = await getDesignatedReaderId();
+  if (!id) throw new Error("google_not_connected");
+  return getSheetsClientForUser(id);
+}
+
+export async function getAgencyReaderId(): Promise<string | null> {
+  return getDesignatedReaderId();
+}
+
+// Agency-token wrappers used by client-portal pages.
+export async function getSheetMetadataAsAgency(fileId: string) {
+  const id = await getDesignatedReaderId();
+  if (!id) throw new Error("google_not_connected");
+  return getSheetMetadata(id, fileId);
+}
+
+export async function getSheetValuesAsAgency(
+  fileId: string,
+  range: string,
+  opts?: { formatted?: boolean },
+) {
+  const id = await getDesignatedReaderId();
+  if (!id) throw new Error("google_not_connected");
+  return getSheetValues(id, fileId, range, opts);
+}
+
+/**
+ * Build a Sheets API client authenticated as the given user. The googleapis
+ * library auto-refreshes access tokens; we listen for the refresh event and
+ * persist the new token so we don't keep paying the refresh roundtrip.
+ */
+export async function getSheetsClientForUser(
+  userId: string,
+): Promise<sheets_v4.Sheets> {
+  const tokens = await getTokensForUser(userId);
+  if (!tokens) {
+    throw new Error("google_not_connected");
+  }
+
+  const client = getOAuthClient();
+  client.setCredentials({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token ?? undefined,
+    expiry_date: tokens.expiry_date
+      ? new Date(tokens.expiry_date).getTime()
+      : undefined,
+    scope: tokens.scope ?? undefined,
+    token_type: tokens.token_type,
+  });
+
+  client.on("tokens", (refreshed: Credentials) => {
+    // Persist refreshed credentials in the background. Errors here shouldn't
+    // crash the request — they'll surface on the next read if truly broken.
+    saveTokensForUser(userId, {
+      ...refreshed,
+      refresh_token: refreshed.refresh_token ?? tokens.refresh_token ?? undefined,
+    }).catch((e) => {
+      console.warn("[google/sheets] failed to persist refreshed token:", e);
+    });
+  });
+
+  return google.sheets({ version: "v4", auth: client });
+}
+
+export type SheetTab = {
+  title: string;
+  rowCount: number;
+  columnCount: number;
+  sheetId: number;
+};
+
+/**
+ * Pull lightweight metadata for a sheet: its title, timezone, and the list of
+ * tabs with their dimensions. Used to confirm a connection works + show the
+ * admin what tabs Cult OS sees in their Mainsheet.
+ */
+export async function getSheetMetadata(userId: string, fileId: string) {
+  const sheets = await getSheetsClientForUser(userId);
+  const { data } = await sheets.spreadsheets.get({
+    spreadsheetId: fileId,
+    fields: "properties(title,timeZone,locale),sheets(properties(sheetId,title,gridProperties))",
+  });
+
+  const tabs: SheetTab[] = (data.sheets ?? []).map((s) => ({
+    sheetId: s.properties?.sheetId ?? 0,
+    title: s.properties?.title ?? "(untitled)",
+    rowCount: s.properties?.gridProperties?.rowCount ?? 0,
+    columnCount: s.properties?.gridProperties?.columnCount ?? 0,
+  }));
+
+  return {
+    title: data.properties?.title ?? null,
+    timeZone: data.properties?.timeZone ?? null,
+    locale: data.properties?.locale ?? null,
+    tabs,
+  };
+}
+
+/**
+ * Read a range of values from a sheet. Range follows A1 notation, e.g.
+ * "Leads!A1:O500" or "'Daily Data'!A:Z".
+ */
+export async function getSheetValues(
+  userId: string,
+  fileId: string,
+  range: string,
+  opts?: { formatted?: boolean },
+): Promise<string[][]> {
+  const sheets = await getSheetsClientForUser(userId);
+  const { data } = await sheets.spreadsheets.values.get({
+    spreadsheetId: fileId,
+    range,
+    // FORMATTED keeps ₹/%/commas (we parse them); UNFORMATTED gives raw numbers.
+    valueRenderOption: opts?.formatted ? "FORMATTED_VALUE" : "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  return (data.values ?? []).map((row) =>
+    (row ?? []).map((c) => String(c ?? "")),
+  );
+}
+
+// Quote a tab title for use in an A1 range, escaping embedded single quotes.
+function quoteTab(title: string): string {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Read the first `rows` rows of each given tab in one batched call. Used to
+ * inspect column headers (which usually sit in row 1, sometimes row 2). Returns
+ * a map of tab title -> array of rows (each row an array of cell strings).
+ */
+export async function getTabHeaderRows(
+  userId: string,
+  fileId: string,
+  tabTitles: string[],
+  rows = 2,
+): Promise<Record<string, string[][]>> {
+  if (tabTitles.length === 0) return {};
+  const sheets = await getSheetsClientForUser(userId);
+  const ranges = tabTitles.map((t) => `${quoteTab(t)}!1:${rows}`);
+  const { data } = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: fileId,
+    ranges,
+    valueRenderOption: "FORMATTED_VALUE",
+    majorDimension: "ROWS",
+  });
+
+  const out: Record<string, string[][]> = {};
+  (data.valueRanges ?? []).forEach((vr, i) => {
+    const title = tabTitles[i];
+    out[title] = (vr.values ?? []).map((row) =>
+      (row ?? []).map((c) => String(c ?? "").trim()),
+    );
+  });
+  return out;
+}

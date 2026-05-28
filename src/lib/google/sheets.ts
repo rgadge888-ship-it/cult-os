@@ -7,15 +7,27 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // Return the user id of the designated "agency reader" — i.e. whichever admin
 // has Google Sheets connected. Client-side pages use this so they can read the
 // Mainsheet even though the client themselves never connected Google. Picks the
-// oldest super_admin token if present, falling back to any admin token.
+// oldest token whose owner is an admin/super_admin.
+//
+// Note: google_oauth_tokens has no direct FK to public.profiles (both reference
+// auth.users separately), so PostgREST can't auto-join. We query in two steps.
 async function getDesignatedReaderId(): Promise<string | null> {
   const admin = createAdminClient();
-  const { data } = await admin
+  const { data: tokens } = await admin
     .from("google_oauth_tokens")
-    .select("user_id, profiles!inner(role)")
-    .order("created_at", { ascending: true })
-    .limit(1);
-  return data?.[0]?.user_id ?? null;
+    .select("user_id, created_at")
+    .order("created_at", { ascending: true });
+  if (!tokens || tokens.length === 0) return null;
+
+  const userIds = tokens.map((t) => t.user_id).filter(Boolean) as string[];
+  const { data: adminRows } = await admin
+    .from("profiles")
+    .select("id")
+    .in("id", userIds)
+    .in("role", ["admin", "super_admin"]);
+  const adminSet = new Set((adminRows ?? []).map((r) => r.id));
+  const first = tokens.find((t) => t.user_id && adminSet.has(t.user_id));
+  return first?.user_id ?? null;
 }
 
 // Wrapper used by client-portal pages that need to read the Mainsheet. Resolves

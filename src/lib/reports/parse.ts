@@ -153,7 +153,14 @@ export function parseDateRange(
     may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7, september: 8,
     sep: 8, sept: 8, october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11,
   };
-  const parts = range.split(/\s*(?:-|–|—|to)\s*/i).map((p) => p.trim()).filter(Boolean);
+  // Split only when the separator is surrounded by whitespace (or "to" word).
+  // This keeps "May-13" as a single date while "May 13 - May 18" splits into a
+  // range. Daily Datasheet uses "May-13" format; weekly reports use the spaced
+  // hyphen form.
+  const parts = range
+    .split(/\s+(?:-|–|—|to)\s+/i)
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (parts.length === 0) return null;
 
   const parseOne = (s: string, fallbackMonth: number | null) => {

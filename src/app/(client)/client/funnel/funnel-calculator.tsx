@@ -4,15 +4,26 @@ import { useMemo, useState } from "react";
 import { Panel, SectionHeader } from "@/components/ui/section";
 
 type Inputs = {
+  // Top of funnel
   spend: number;
   impressions: number;
-  ctr: number; // percent
-  loadingSpeed: number; // percent — Clicks → LPV
-  convRatio: number; // percent — LPV → Purchase
-  showUpRate: number; // percent — Purchase → Show Up
-  conversionRate: number; // percent — Show Up → L1 sale
-  l0Price: number; // ₹ (set to 0 for free funnel)
-  l1Price: number; // ₹
+  ctr: number;
+  loadingSpeed: number;
+  convRatio: number;
+  showUpRate: number;
+  conversionRate: number; // Show Up → L1
+  // Offer prices
+  l0Price: number;
+  l1Price: number;
+  // L2 — monthly upsell of L1
+  hasL2: boolean;
+  l1ToL2Rate: number; // % of L1 buyers that take L2
+  l2Price: number;
+  // L3 — 6-month / annual upsell. Source depends on whether L2 exists.
+  hasL3: boolean;
+  l2ToL3Rate: number; // used when hasL2 === true
+  l1ToL3Rate: number; // used when hasL2 === false
+  l3Price: number;
 };
 
 const DEFAULTS: Inputs = {
@@ -25,6 +36,13 @@ const DEFAULTS: Inputs = {
   conversionRate: 8,
   l0Price: 99,
   l1Price: 19999,
+  hasL2: true,
+  l1ToL2Rate: 30,
+  l2Price: 49999,
+  hasL3: true,
+  l2ToL3Rate: 50,
+  l1ToL3Rate: 10,
+  l3Price: 299999,
 };
 
 const inr = (n: number) =>
@@ -39,26 +57,46 @@ const num = (n: number) =>
 
 export function FunnelCalculator() {
   const [i, setI] = useState<Inputs>(DEFAULTS);
-  const set = <K extends keyof Inputs>(k: K) => (v: number) =>
-    setI((s) => ({ ...s, [k]: Number.isFinite(v) ? v : 0 }));
+  const set = <K extends keyof Inputs>(k: K) => (v: number | boolean) =>
+    setI((s) => ({
+      ...s,
+      [k]: typeof v === "boolean" ? v : Number.isFinite(v) ? v : 0,
+    }));
 
   const c = useMemo(() => {
     const clicks = i.impressions * (i.ctr / 100);
     const lpv = clicks * (i.loadingSpeed / 100);
-    const purchases = lpv * (i.convRatio / 100);
+    const purchases = lpv * (i.convRatio / 100); // L0
     const showUps = purchases * (i.showUpRate / 100);
-    const conversions = showUps * (i.conversionRate / 100);
+    const l1Conversions = showUps * (i.conversionRate / 100);
+
+    // L2: only if hasL2
+    const l2Conversions = i.hasL2 ? l1Conversions * (i.l1ToL2Rate / 100) : 0;
+
+    // L3: from L2 if it exists, else direct from L1
+    const l3Conversions = i.hasL3
+      ? i.hasL2
+        ? l2Conversions * (i.l2ToL3Rate / 100)
+        : l1Conversions * (i.l1ToL3Rate / 100)
+      : 0;
+
     const l0Revenue = purchases * i.l0Price;
-    const l1Revenue = conversions * i.l1Price;
-    const revenue = l0Revenue + l1Revenue;
+    const l1Revenue = l1Conversions * i.l1Price;
+    const l2Revenue = i.hasL2 ? l2Conversions * i.l2Price : 0;
+    const l3Revenue = i.hasL3 ? l3Conversions * i.l3Price : 0;
+    const revenue = l0Revenue + l1Revenue + l2Revenue + l3Revenue;
+
     const netPL = revenue - i.spend;
     const roas = i.spend > 0 ? revenue / i.spend : 0;
     const cpr = purchases > 0 ? i.spend / purchases : 0;
     const cpm = i.impressions > 0 ? (i.spend / i.impressions) * 1000 : 0;
     const cpc = clicks > 0 ? i.spend / clicks : 0;
+
     return {
-      clicks, lpv, purchases, showUps, conversions,
-      l0Revenue, l1Revenue, revenue, netPL, roas, cpr, cpm, cpc,
+      clicks, lpv, purchases, showUps,
+      l1Conversions, l2Conversions, l3Conversions,
+      l0Revenue, l1Revenue, l2Revenue, l3Revenue,
+      revenue, netPL, roas, cpr, cpm, cpc,
     };
   }, [i]);
 
@@ -95,13 +133,7 @@ export function FunnelCalculator() {
             step={1000}
             onChange={set("impressions")}
           />
-          <PercentRow
-            label="CTR"
-            value={i.ctr}
-            step={0.1}
-            max={20}
-            onChange={set("ctr")}
-          />
+          <PercentRow label="CTR" value={i.ctr} step={0.1} max={20} onChange={set("ctr")} />
           <PercentRow
             label="Loading Speed"
             help="Clicks that actually load the LP"
@@ -128,6 +160,8 @@ export function FunnelCalculator() {
             max={50}
             onChange={set("conversionRate")}
           />
+
+          {/* L0 + L1 prices */}
           <div className="border-t border-zinc-900 pt-5">
             <p className="mb-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
               Offer prices
@@ -149,6 +183,73 @@ export function FunnelCalculator() {
               onChange={set("l1Price")}
             />
           </div>
+
+          {/* L2 — monthly upsell */}
+          <div className="border-t border-zinc-900 pt-5">
+            <ToggleRow
+              label="L2 upsell"
+              help="monthly cadence · boot camp / challenge"
+              value={i.hasL2}
+              onChange={set("hasL2")}
+            />
+            {i.hasL2 ? (
+              <div className="mt-4 space-y-4">
+                <PercentRow
+                  label="L1 → L2 conversion"
+                  value={i.l1ToL2Rate}
+                  step={1}
+                  max={100}
+                  onChange={set("l1ToL2Rate")}
+                />
+                <NumberRow
+                  label="L2 offer price"
+                  prefix="₹"
+                  value={i.l2Price}
+                  step={1000}
+                  onChange={set("l2Price")}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          {/* L3 — long cadence upsell */}
+          <div className="border-t border-zinc-900 pt-5">
+            <ToggleRow
+              label="L3 upsell"
+              help={i.hasL2 ? "6-month / annual · upsell of L2" : "direct from L1"}
+              value={i.hasL3}
+              onChange={set("hasL3")}
+            />
+            {i.hasL3 ? (
+              <div className="mt-4 space-y-4">
+                {i.hasL2 ? (
+                  <PercentRow
+                    label="L2 → L3 conversion"
+                    value={i.l2ToL3Rate}
+                    step={1}
+                    max={100}
+                    onChange={set("l2ToL3Rate")}
+                  />
+                ) : (
+                  <PercentRow
+                    label="L1 → L3 conversion"
+                    help="L2 disabled · jumps from L1 to L3 directly"
+                    value={i.l1ToL3Rate}
+                    step={0.5}
+                    max={50}
+                    onChange={set("l1ToL3Rate")}
+                  />
+                )}
+                <NumberRow
+                  label="L3 offer price"
+                  prefix="₹"
+                  value={i.l3Price}
+                  step={5000}
+                  onChange={set("l3Price")}
+                />
+              </div>
+            ) : null}
+          </div>
         </Panel>
       </div>
 
@@ -167,7 +268,22 @@ export function FunnelCalculator() {
             <FunnelDrop pct={i.showUpRate} note="show up" />
             <FunnelStep label="Show Ups" value={c.showUps} />
             <FunnelDrop pct={i.conversionRate} note="convert" />
-            <FunnelStep label="L1 Conversions" value={c.conversions} accent />
+            <FunnelStep label="L1 Conversions" value={c.l1Conversions} accent />
+            {i.hasL2 ? (
+              <>
+                <FunnelDrop pct={i.l1ToL2Rate} note="L1 → L2" />
+                <FunnelStep label="L2 Conversions" value={c.l2Conversions} accent />
+              </>
+            ) : null}
+            {i.hasL3 ? (
+              <>
+                <FunnelDrop
+                  pct={i.hasL2 ? i.l2ToL3Rate : i.l1ToL3Rate}
+                  note={i.hasL2 ? "L2 → L3" : "L1 → L3"}
+                />
+                <FunnelStep label="L3 Conversions" value={c.l3Conversions} accent />
+              </>
+            ) : null}
           </ol>
         </Panel>
 
@@ -177,7 +293,14 @@ export function FunnelCalculator() {
             <BigOutcome
               label="Total Revenue"
               value={inr(c.revenue)}
-              sub={`L0 ${inr(c.l0Revenue)} · L1 ${inr(c.l1Revenue)}`}
+              sub={[
+                `L0 ${inr(c.l0Revenue)}`,
+                `L1 ${inr(c.l1Revenue)}`,
+                i.hasL2 ? `L2 ${inr(c.l2Revenue)}` : null,
+                i.hasL3 ? `L3 ${inr(c.l3Revenue)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
               accent
             />
             <BigOutcome
@@ -191,6 +314,31 @@ export function FunnelCalculator() {
             <Outcome label="CPM" value={inr(c.cpm)} />
             <Outcome label="CPC" value={inr(c.cpc)} />
           </div>
+        </Panel>
+
+        {/* Per-tier revenue + counts breakdown */}
+        <SectionHeader label="per-tier breakdown" className="mb-3" />
+        <Panel>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-900 text-[10px] uppercase tracking-widest text-zinc-500">
+                <th className="px-4 py-2 text-left font-normal">Tier</th>
+                <th className="px-4 py-2 text-right font-normal">Conversions</th>
+                <th className="px-4 py-2 text-right font-normal">Unit price</th>
+                <th className="px-4 py-2 text-right font-normal">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              <TierRow label="L0 ticket" count={c.purchases} price={i.l0Price} rev={c.l0Revenue} />
+              <TierRow label="L1 offer" count={c.l1Conversions} price={i.l1Price} rev={c.l1Revenue} />
+              {i.hasL2 ? (
+                <TierRow label="L2 offer" count={c.l2Conversions} price={i.l2Price} rev={c.l2Revenue} />
+              ) : null}
+              {i.hasL3 ? (
+                <TierRow label="L3 offer" count={c.l3Conversions} price={i.l3Price} rev={c.l3Revenue} />
+              ) : null}
+            </tbody>
+          </table>
         </Panel>
 
         <p className="text-xs text-zinc-600">
@@ -290,6 +438,44 @@ function PercentRow({
   );
 }
 
+function ToggleRow({
+  label,
+  help,
+  value,
+  onChange,
+}: {
+  label: string;
+  help?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className="flex w-full items-center justify-between gap-3"
+    >
+      <div className="text-left">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+          {label}
+        </p>
+        {help ? <p className="mt-0.5 text-[11px] text-zinc-600">{help}</p> : null}
+      </div>
+      <span
+        className={`inline-flex h-7 w-12 items-center rounded-full border transition-colors ${
+          value ? "border-orange-500 bg-orange-950/50" : "border-zinc-700 bg-zinc-900"
+        }`}
+      >
+        <span
+          className={`mx-0.5 h-5 w-5 rounded-full transition-transform ${
+            value ? "translate-x-5 bg-orange-400" : "translate-x-0 bg-zinc-600"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 /* ───────────────────────────── output blocks ──────────────────────────── */
 
 function FunnelStep({
@@ -313,9 +499,7 @@ function FunnelStep({
           : "border-zinc-800 bg-zinc-950/60"
       }`}
     >
-      <span className="text-xs uppercase tracking-widest text-zinc-500">
-        {label}
-      </span>
+      <span className="text-xs uppercase tracking-widest text-zinc-500">{label}</span>
       <span
         className={`font-mono text-lg ${accent ? "text-orange-300" : "text-zinc-100"}`}
       >
@@ -376,5 +560,26 @@ function Outcome({ label, value }: { label: string; value: string }) {
       </p>
       <p className="mt-1 font-mono text-base text-zinc-200">{value}</p>
     </div>
+  );
+}
+
+function TierRow({
+  label,
+  count,
+  price,
+  rev,
+}: {
+  label: string;
+  count: number;
+  price: number;
+  rev: number;
+}) {
+  return (
+    <tr className="border-b border-zinc-900/60 last:border-b-0">
+      <td className="px-4 py-2 text-zinc-300">{label}</td>
+      <td className="px-4 py-2 text-right font-mono text-zinc-200">{num(count)}</td>
+      <td className="px-4 py-2 text-right font-mono text-zinc-400">{inr(price)}</td>
+      <td className="px-4 py-2 text-right font-mono text-orange-300">{inr(rev)}</td>
+    </tr>
   );
 }

@@ -110,9 +110,11 @@ async function loadSnapshot(fileId: string | null): Promise<Snapshot> {
             raw,
           });
         }
-        // Sort by parsed date asc; take the LAST 7 calendar days that exist.
+        // Filter to past dates only (the sheet has future-dated placeholder rows
+        // that were polluting the "last 7 days" view), then take the 7 most recent.
+        const todayIso = new Date().toISOString().slice(0, 10);
         parsed.sort((a, b) => a.iso.localeCompare(b.iso));
-        const last7 = parsed.slice(-7);
+        const last7 = parsed.filter((r) => r.iso <= todayIso).slice(-7);
         for (const r of last7) {
           dailySpend.push({ date: r.label, spend: r.spend, raw: r.raw });
         }

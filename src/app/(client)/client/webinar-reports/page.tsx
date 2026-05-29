@@ -1,10 +1,10 @@
+import Link from "next/link";
 import { getCurrentClientContext } from "@/lib/sheets/client-context";
 import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
 import { Panel, SectionHeader } from "@/components/ui/section";
-import { parseNumber } from "@/lib/reports/parse";
 
 function findHeaderIdx(rows: string[][], scan = 4): number {
   let best = 0;
@@ -118,7 +118,7 @@ export default async function ClientWebinarReportsPage() {
         ) : (
           <div className="space-y-4">
             {webinars.map((w, i) => (
-              <Panel key={i} className="p-5">
+              <Panel key={i} className="p-5 transition-colors hover:border-zinc-700">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <div>
                     <p className="font-mono text-xs text-zinc-500">
@@ -129,13 +129,21 @@ export default async function ClientWebinarReportsPage() {
                       <span className="font-sans text-xs text-zinc-500">registered</span>
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                      revenue
-                    </p>
-                    <p className="font-mono text-lg text-orange-300">
-                      {w.revenue || "—"}
-                    </p>
+                  <div className="flex items-baseline gap-6">
+                    <div className="text-right">
+                      <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                        revenue
+                      </p>
+                      <p className="font-mono text-lg text-orange-300">
+                        {w.revenue || "—"}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/client/webinar-reports/${i}`}
+                      className="inline-flex h-8 items-center rounded-md border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-300 hover:border-orange-500 hover:text-orange-300"
+                    >
+                      view full →
+                    </Link>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">

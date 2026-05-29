@@ -14,6 +14,7 @@ const ADMIN_NAV: NavItem[] = [
 const CLIENT_NAV: NavItem[] = [
   { href: "/client", label: "Dashboard" },
   { href: "/client/leads", label: "Leads" },
+  { href: "/client/daily-data", label: "Daily Data" },
   { href: "/client/webinar-reports", label: "Webinar Reports" },
   { href: "/client/funnel", label: "Funnel Calculator" },
   { href: "/client/creatives", label: "Ads & Creatives" },

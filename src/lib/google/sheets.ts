@@ -1,5 +1,6 @@
 import { google, type sheets_v4 } from "googleapis";
 import type { Credentials } from "google-auth-library";
+import { unstable_cache } from "next/cache";
 import { getOAuthClient } from "./oauth";
 import { getTokensForUser, saveTokensForUser } from "./tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -42,11 +43,32 @@ export async function getAgencyReaderId(): Promise<string | null> {
   return getDesignatedReaderId();
 }
 
-// Agency-token wrappers used by client-portal pages.
+// Cached inner reads. unstable_cache memoises across requests + dedupes within
+// a single render pass. TTL: metadata 5 min (tabs rarely change), values 60s
+// (data drifts as new rows come in, but client UX needs snappiness).
+const cachedMetadata = unstable_cache(
+  async (userId: string, fileId: string) => getSheetMetadata(userId, fileId),
+  ["sheet-metadata-v1"],
+  { revalidate: 300, tags: ["sheets:metadata"] },
+);
+
+const cachedValues = unstable_cache(
+  async (
+    userId: string,
+    fileId: string,
+    range: string,
+    formatted: boolean,
+  ): Promise<string[][]> => getSheetValues(userId, fileId, range, { formatted }),
+  ["sheet-values-v1"],
+  { revalidate: 60, tags: ["sheets:values"] },
+);
+
+// Agency-token wrappers used by client-portal pages. Each first resolves the
+// reader user id, then hits the cached inner function.
 export async function getSheetMetadataAsAgency(fileId: string) {
   const id = await getDesignatedReaderId();
   if (!id) throw new Error("google_not_connected");
-  return getSheetMetadata(id, fileId);
+  return cachedMetadata(id, fileId);
 }
 
 export async function getSheetValuesAsAgency(
@@ -56,7 +78,7 @@ export async function getSheetValuesAsAgency(
 ) {
   const id = await getDesignatedReaderId();
   if (!id) throw new Error("google_not_connected");
-  return getSheetValues(id, fileId, range, opts);
+  return cachedValues(id, fileId, range, !!opts?.formatted);
 }
 
 /**

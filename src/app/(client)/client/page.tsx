@@ -7,7 +7,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
-import { parseNumber } from "@/lib/reports/parse";
+import { parseNumber, parseDateRange } from "@/lib/reports/parse";
 import type { WeeklyReport, WeeklyReportData } from "@/lib/db/types";
 
 type Snapshot = {
@@ -82,6 +82,9 @@ async function loadSnapshot(fileId: string | null): Promise<Snapshot> {
     }
 
     // --- Daily spend: last 7 days from daily datasheet ---
+    // Parse the Date column to real dates, sort descending, take 7 most recent.
+    // Earlier we took the last 7 ROWS which broke when the sheet had blank
+    // rows / out-of-order entries / future-dated placeholders.
     const dailySpend: Snapshot["dailySpend"] = [];
     if (daily.length > 1) {
       const head = daily[0].map((h) => h.toLowerCase());
@@ -90,18 +93,28 @@ async function loadSnapshot(fileId: string | null): Promise<Snapshot> {
         (h) => h === "with gst" || h === "ad spend" || h === "spend",
       );
       if (iDate >= 0 && iSpend >= 0) {
-        const dataRows = daily
-          .slice(1)
-          .filter((r) => (r[iDate] ?? "").toString().trim() !== "");
-        const last7 = dataRows.slice(-7);
-        for (const r of last7) {
+        type Row = { label: string; iso: string; spend: number; raw: string };
+        const parsed: Row[] = [];
+        for (const r of daily.slice(1)) {
+          const label = (r[iDate] ?? "").toString().trim();
+          if (!label) continue;
+          // Reuse parseDateRange: passing a single date like "May 13" yields
+          // { start: '2026-05-13', end: '2026-05-13' }.
+          const dr = parseDateRange(label);
+          if (!dr) continue;
           const raw = (r[iSpend] ?? "").toString().trim();
-          const v = parseNumber(raw) ?? 0;
-          dailySpend.push({
-            date: (r[iDate] ?? "").toString().trim(),
-            spend: v,
+          parsed.push({
+            label,
+            iso: dr.start,
+            spend: parseNumber(raw) ?? 0,
             raw,
           });
+        }
+        // Sort by parsed date asc; take the LAST 7 calendar days that exist.
+        parsed.sort((a, b) => a.iso.localeCompare(b.iso));
+        const last7 = parsed.slice(-7);
+        for (const r of last7) {
+          dailySpend.push({ date: r.label, spend: r.spend, raw: r.raw });
         }
       }
     }

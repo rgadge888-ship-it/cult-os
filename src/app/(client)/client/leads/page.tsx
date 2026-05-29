@@ -43,6 +43,9 @@ export default async function ClientLeadsPage({
   searchParams: Promise<{ range?: string; from?: string; to?: string; tag?: string }>;
 }) {
   const sp = await searchParams;
+  const customFrom = sp.from?.trim() ?? "";
+  const customTo = sp.to?.trim() ?? "";
+  const hasCustom = Boolean(customFrom && customTo);
   const range = (sp.range && sp.range in RANGES ? sp.range : "30d") as RangeKey;
   const tagFilter = sp.tag?.trim() ?? "";
 
@@ -86,21 +89,26 @@ export default async function ClientLeadsPage({
           allTags = Array.from(tagSet).sort().reverse();
         }
 
-        // Date range filter
-        const cutoff = (() => {
-          const cfg = RANGES[range];
-          if (cfg.days == null) return null;
-          const d = new Date();
-          d.setUTCDate(d.getUTCDate() - cfg.days);
-          d.setUTCHours(0, 0, 0, 0);
-          return d;
-        })();
+        // Date range filter — custom (from/to) overrides preset
+        const startCutoff = hasCustom
+          ? new Date(`${customFrom}T00:00:00Z`)
+          : (() => {
+              const cfg = RANGES[range];
+              if (cfg.days == null) return null;
+              const d = new Date();
+              d.setUTCDate(d.getUTCDate() - cfg.days);
+              d.setUTCHours(0, 0, 0, 0);
+              return d;
+            })();
+        const endCutoff = hasCustom ? new Date(`${customTo}T23:59:59Z`) : null;
 
         rows = dataRows
           .filter((r) => {
-            if (cutoff != null && iTime >= 0) {
+            if (startCutoff != null && iTime >= 0) {
               const d = parseLeadDate((r[iTime] ?? "").toString());
-              if (!d || d < cutoff) return false;
+              if (!d) return false;
+              if (d < startCutoff) return false;
+              if (endCutoff && d > endCutoff) return false;
             }
             if (tagFilter && iTag >= 0) {
               const t = (r[iTag] ?? "").toString().trim();
@@ -148,7 +156,7 @@ export default async function ClientLeadsPage({
               key={key}
               href={buildHref({ range: key })}
               className={`inline-flex h-8 items-center rounded-md border px-3 text-xs uppercase tracking-widest ${
-                range === key
+                range === key && !hasCustom
                   ? "border-orange-500 bg-orange-950/30 text-orange-300"
                   : "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
               }`}
@@ -157,6 +165,33 @@ export default async function ClientLeadsPage({
             </Link>
           ),
         )}
+        {/* Custom date range */}
+        <form action="/client/leads" className="flex items-center gap-1">
+          {tagFilter ? <input type="hidden" name="tag" value={tagFilter} /> : null}
+          <input
+            type="date"
+            name="from"
+            defaultValue={customFrom}
+            className={`h-8 rounded-md border bg-zinc-950 px-2 text-xs focus:border-orange-500 focus:outline-none ${
+              hasCustom ? "border-orange-500 text-orange-300" : "border-zinc-800 text-zinc-300"
+            }`}
+          />
+          <span className="text-zinc-700">→</span>
+          <input
+            type="date"
+            name="to"
+            defaultValue={customTo}
+            className={`h-8 rounded-md border bg-zinc-950 px-2 text-xs focus:border-orange-500 focus:outline-none ${
+              hasCustom ? "border-orange-500 text-orange-300" : "border-zinc-800 text-zinc-300"
+            }`}
+          />
+          <button
+            type="submit"
+            className="h-8 rounded-md border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-300 hover:border-orange-500 hover:text-orange-300"
+          >
+            apply
+          </button>
+        </form>
         {allTags.length > 0 ? (
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">

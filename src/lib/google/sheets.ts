@@ -63,6 +63,36 @@ const cachedValues = unstable_cache(
   { revalidate: 60, tags: ["sheets:values"] },
 );
 
+// Batched read: one HTTP call to the Sheets API, multiple ranges back. Cache
+// key is a sorted+joined ranges list so order-doesn't-matter requests share an
+// entry.
+const cachedBatchValues = unstable_cache(
+  async (
+    userId: string,
+    fileId: string,
+    rangesKey: string,
+    formatted: boolean,
+  ): Promise<Record<string, string[][]>> => {
+    const sheets = await getSheetsClientForUser(userId);
+    const ranges = rangesKey.split("");
+    const { data } = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId: fileId,
+      ranges,
+      valueRenderOption: formatted ? "FORMATTED_VALUE" : "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    const out: Record<string, string[][]> = {};
+    (data.valueRanges ?? []).forEach((vr, i) => {
+      out[ranges[i]] = (vr.values ?? []).map((row) =>
+        (row ?? []).map((c) => String(c ?? "")),
+      );
+    });
+    return out;
+  },
+  ["sheet-batch-v1"],
+  { revalidate: 60, tags: ["sheets:values"] },
+);
+
 // Agency-token wrappers used by client-portal pages. Each first resolves the
 // reader user id, then hits the cached inner function.
 export async function getSheetMetadataAsAgency(fileId: string) {
@@ -79,6 +109,19 @@ export async function getSheetValuesAsAgency(
   const id = await getDesignatedReaderId();
   if (!id) throw new Error("google_not_connected");
   return cachedValues(id, fileId, range, !!opts?.formatted);
+}
+
+// Read many ranges in ONE HTTP call. Returns { [range]: rows[][] }.
+export async function getSheetValuesBatchAsAgency(
+  fileId: string,
+  ranges: string[],
+  opts?: { formatted?: boolean },
+): Promise<Record<string, string[][]>> {
+  const id = await getDesignatedReaderId();
+  if (!id) throw new Error("google_not_connected");
+  if (ranges.length === 0) return {};
+  // Use a unit separator () so the cache key is unambiguously reversible.
+  return cachedBatchValues(id, fileId, ranges.join(""), !!opts?.formatted);
 }
 
 /**

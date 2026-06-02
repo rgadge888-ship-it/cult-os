@@ -46,10 +46,13 @@ export async function getAgencyReaderId(): Promise<string | null> {
 // Cached inner reads. unstable_cache memoises across requests + dedupes within
 // a single render pass. TTL: metadata 5 min (tabs rarely change), values 60s
 // (data drifts as new rows come in, but client UX needs snappiness).
+// Cache TTLs: tab structure rarely changes, so metadata can sit longer; values
+// drift with new leads / daily entries, so refresh more often — but still long
+// enough that nav within a session almost always hits cache.
 const cachedMetadata = unstable_cache(
   async (userId: string, fileId: string) => getSheetMetadata(userId, fileId),
-  ["sheet-metadata-v1"],
-  { revalidate: 300, tags: ["sheets:metadata"] },
+  ["sheet-metadata-v2"],
+  { revalidate: 1800, tags: ["sheets:metadata"] },
 );
 
 const cachedValues = unstable_cache(
@@ -59,8 +62,8 @@ const cachedValues = unstable_cache(
     range: string,
     formatted: boolean,
   ): Promise<string[][]> => getSheetValues(userId, fileId, range, { formatted }),
-  ["sheet-values-v1"],
-  { revalidate: 60, tags: ["sheets:values"] },
+  ["sheet-values-v2"],
+  { revalidate: 300, tags: ["sheets:values"] },
 );
 
 // Batched read: one HTTP call to the Sheets API, multiple ranges back. Cache
@@ -89,8 +92,8 @@ const cachedBatchValues = unstable_cache(
     });
     return out;
   },
-  ["sheet-batch-v1"],
-  { revalidate: 60, tags: ["sheets:values"] },
+  ["sheet-batch-values-v2"],
+  { revalidate: 300, tags: ["sheets:values"] },
 );
 
 // Agency-token wrappers used by client-portal pages. Each first resolves the

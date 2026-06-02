@@ -164,12 +164,17 @@ export default async function WebinarDetailPage({
       </div>
 
       {/* Hero stats */}
-      <Panel className="mb-8 grid gap-4 p-6 sm:grid-cols-4">
+      <Panel className="mb-8 grid gap-4 p-6 sm:grid-cols-5">
+        <Hero label="Ad Spend" value={get(iAdSpentGst) || get(iAdSpent)} />
         <Hero label="Registered" value={get(iReg)} />
         <Hero label="Revenue" value={get(iRevenue)} accent />
         <Hero label="ROAS" value={get(iRoas)} />
         <Hero label="Gross Profit" value={get(iProfit)} />
       </Panel>
+
+      {/* Retention trendline across recent webinars */}
+      <RetentionTrendline rows={dataRows} headers={headers} highlightIdx={dataRows.length - 1 - targetIdx} />
+
 
       {/* The Funnel */}
       <div className="mb-8">
@@ -325,6 +330,139 @@ function Field({ label, value, accent }: { label: string; value: string; accent?
       <p className={`mt-1 font-mono text-sm ${accent ? "text-orange-300" : "text-zinc-100"}`}>
         {value || "—"}
       </p>
+    </div>
+  );
+}
+
+// SVG line chart of show-up % across the last N webinars. The currently-viewed
+// webinar is highlighted.
+function RetentionTrendline({
+  rows,
+  headers,
+  highlightIdx,
+}: {
+  rows: string[][];
+  headers: string[];
+  highlightIdx: number;
+}) {
+  const lower = headers.map((h) => h.toLowerCase());
+  const iDate = lower.findIndex((h) => h.includes("date"));
+  const iAtt = lower.findIndex((h) => /attendees\s*[%(]/i.test(h));
+  const iEnd = lower.findIndex(
+    (h) => /pitch end.*percentage|pitch end\s*%/i.test(h),
+  );
+  if (iAtt < 0 && iEnd < 0) return null;
+
+  const series = rows.slice(-10).map((r) => ({
+    date: iDate >= 0 ? (r[iDate] ?? "").toString().trim() : "",
+    attended: iAtt >= 0 ? parseNumber(r[iAtt]) : null,
+    stayed: iEnd >= 0 ? parseNumber(r[iEnd]) : null,
+  }));
+  if (series.length < 2) return null;
+
+  const offset = rows.length - series.length;
+  const highlight = highlightIdx - offset;
+
+  const width = 800;
+  const height = 180;
+  const pad = { l: 36, r: 16, t: 16, b: 24 };
+  const innerW = width - pad.l - pad.r;
+  const innerH = height - pad.t - pad.b;
+  const stepX = series.length > 1 ? innerW / (series.length - 1) : 0;
+  const yFor = (v: number) => pad.t + (1 - v / 100) * innerH;
+
+  const buildPath = (key: "attended" | "stayed") => {
+    const pts = series
+      .map((p, i) => ({ x: pad.l + i * stepX, y: p[key] != null ? yFor(p[key]!) : null, i }))
+      .filter((p) => p.y != null);
+    if (pts.length < 2) return "";
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  };
+
+  return (
+    <div className="mb-8">
+      <SectionHeader
+        label="show-up + retention trend"
+        className="mb-3"
+        action={
+          <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+            last {series.length} webinars
+          </span>
+        }
+      />
+      <Panel className="p-4">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img">
+          {/* horizontal gridlines at 25/50/75% */}
+          {[25, 50, 75, 100].map((g) => (
+            <g key={g}>
+              <line
+                x1={pad.l}
+                x2={width - pad.r}
+                y1={yFor(g)}
+                y2={yFor(g)}
+                stroke="#27272a"
+                strokeDasharray="2 4"
+              />
+              <text
+                x={pad.l - 6}
+                y={yFor(g)}
+                fontSize="9"
+                fill="#52525b"
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontFamily="ui-monospace, monospace"
+              >
+                {g}%
+              </text>
+            </g>
+          ))}
+          {/* lines */}
+          <path d={buildPath("attended")} stroke="#fb923c" strokeWidth="2" fill="none" />
+          <path d={buildPath("stayed")} stroke="#71717a" strokeWidth="2" fill="none" strokeDasharray="4 3" />
+          {/* points */}
+          {series.map((p, i) => {
+            const x = pad.l + i * stepX;
+            const isHi = i === highlight;
+            return (
+              <g key={i}>
+                {p.attended != null ? (
+                  <circle
+                    cx={x}
+                    cy={yFor(p.attended)}
+                    r={isHi ? 5 : 3}
+                    fill={isHi ? "#fb923c" : "#fb923c"}
+                    stroke={isHi ? "#fed7aa" : "none"}
+                    strokeWidth={isHi ? 2 : 0}
+                  />
+                ) : null}
+                {p.stayed != null ? (
+                  <circle cx={x} cy={yFor(p.stayed)} r={2.5} fill="#71717a" />
+                ) : null}
+                <text
+                  x={x}
+                  y={height - 6}
+                  fontSize="9"
+                  fill={isHi ? "#fb923c" : "#52525b"}
+                  textAnchor="middle"
+                  fontFamily="ui-monospace, monospace"
+                >
+                  {p.date.replace(/^[A-Za-z]+\s+/, "").slice(0, 6)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        <div className="mt-2 flex items-center gap-5 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-0.5 w-4 bg-orange-400" />
+            attended %
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-0.5 w-4 border-t border-dashed border-zinc-500" />
+            stayed till pitch end %
+          </span>
+        </div>
+      </Panel>
     </div>
   );
 }

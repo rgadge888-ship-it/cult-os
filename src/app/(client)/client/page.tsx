@@ -72,8 +72,16 @@ export default async function ClientDashboardPage() {
         </p>
       </div>
 
-      {/* This Week — pure DB, renders immediately */}
+      {/* This Month — cumulative from Monthly Datasheet tab, streams in */}
       <div className="mt-8">
+        <SectionHeader label="this month" className="mb-3" />
+        <Suspense fallback={<MonthlySkeleton />}>
+          <MonthlyCumulativeSection fileId={fileId} />
+        </Suspense>
+      </div>
+
+      {/* This Week — pure DB, renders immediately */}
+      <div className="mt-10">
         <SectionHeader
           label="this week"
           className="mb-3"
@@ -409,7 +417,7 @@ async function CurrentWebinarSection({
       </div>
       <div>
         <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-          Cohort spend
+          Ad spend
         </p>
         <p className="mt-1 font-mono text-base text-zinc-100">
           {snapshot.cohortSpend != null ? inr(snapshot.cohortSpend) : "—"}
@@ -565,6 +573,91 @@ function CurrentWebinarSkeleton() {
       ))}
     </Panel>
   );
+}
+
+function MonthlySkeleton() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="rounded-md border border-zinc-800 bg-zinc-950/60 p-4">
+          <Skeleton className="h-2 w-16" />
+          <Skeleton className="mt-3 h-7 w-24" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+async function MonthlyCumulativeSection({ fileId }: { fileId: string | null }) {
+  if (!fileId) return null;
+  try {
+    const meta = await getSheetMetadataAsAgency(fileId);
+    const monthlyTab = meta.tabs.find((t) => /monthly/i.test(t.title));
+    if (!monthlyTab) {
+      return (
+        <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
+          No Monthly Datasheet tab found in your Mainsheet.
+        </Panel>
+      );
+    }
+
+    const batch = await getSheetValuesBatchAsAgency(
+      fileId,
+      [`'${monthlyTab.title}'!A1:Z200`],
+      { formatted: true },
+    );
+    const rows = batch[`'${monthlyTab.title}'!A1:Z200`] ?? [];
+    if (rows.length < 2) {
+      return (
+        <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
+          No monthly rows yet.
+        </Panel>
+      );
+    }
+
+    const head = rows[0].map((h) => h.toLowerCase());
+    const data = rows.slice(1).filter((r) => r.some((c) => (c ?? "").trim() !== ""));
+    if (data.length === 0) {
+      return (
+        <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
+          No monthly rows yet.
+        </Panel>
+      );
+    }
+    const latest = data[data.length - 1];
+
+    const idx = (...needles: string[]) =>
+      head.findIndex((h) => needles.some((n) => h.includes(n)));
+    const iRange = idx("date range", "date", "month");
+    const iSpend = idx("with gst", "ad spend", "spend");
+    const iRevenue = idx("total revenue", "revenue");
+    const iConversions = idx("upsells", "converted");
+    const iProfit = idx("gross profit", "net profit", "profit");
+
+    const get = (i: number) => (i >= 0 ? (latest[i] ?? "").toString().trim() : "");
+
+    return (
+      <>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Kpi label="Ad Spend" value={get(iSpend)} />
+          <Kpi label="Revenue" value={get(iRevenue)} accent />
+          <Kpi label="Conversions (L1)" value={get(iConversions)} />
+          <Kpi label="Net P/L" value={get(iProfit)} />
+        </div>
+        {iRange >= 0 && get(iRange) ? (
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+            {get(iRange)}
+          </p>
+        ) : null}
+      </>
+    );
+  } catch (e) {
+    return (
+      <Panel className="px-6 py-6 text-center text-sm text-red-400">
+        Couldn't read monthly data: {e instanceof Error ? e.message : "error"}
+      </Panel>
+    );
+  }
 }
 
 function DailySpendSkeleton() {

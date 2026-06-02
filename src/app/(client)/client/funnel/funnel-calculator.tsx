@@ -3,10 +3,16 @@
 import { useMemo, useState } from "react";
 import { Panel, SectionHeader } from "@/components/ui/section";
 
+type ImpressionsMode = "manual" | "cpm";
+
 type Inputs = {
   // Top of funnel
   spend: number;
+  // Two ways to express "how much volume": manual impressions count, or a
+  // target CPM that derives impressions from spend.
+  impressionsMode: ImpressionsMode;
   impressions: number;
+  cpmTarget: number;
   ctr: number;
   loadingSpeed: number;
   convRatio: number;
@@ -28,7 +34,9 @@ type Inputs = {
 
 const DEFAULTS: Inputs = {
   spend: 50000,
+  impressionsMode: "manual",
   impressions: 80000,
+  cpmTarget: 625,
   ctr: 1.5,
   loadingSpeed: 80,
   convRatio: 10,
@@ -57,14 +65,32 @@ const num = (n: number) =>
 
 export function FunnelCalculator() {
   const [i, setI] = useState<Inputs>(DEFAULTS);
-  const set = <K extends keyof Inputs>(k: K) => (v: number | boolean) =>
+  const set = <K extends keyof Inputs>(k: K) => (v: number | boolean | string) =>
     setI((s) => ({
       ...s,
-      [k]: typeof v === "boolean" ? v : Number.isFinite(v) ? v : 0,
+      [k]:
+        typeof v === "string" || typeof v === "boolean"
+          ? v
+          : Number.isFinite(v)
+          ? v
+          : 0,
     }));
 
   const c = useMemo(() => {
-    const clicks = i.impressions * (i.ctr / 100);
+    // Resolve effective impressions + CPM based on mode.
+    // - manual mode: impressions is the input → CPM = spend / impressions × 1000
+    // - cpm mode: cpmTarget is the input → impressions = spend × 1000 / cpm
+    const effectiveImpressions =
+      i.impressionsMode === "cpm" && i.cpmTarget > 0
+        ? (i.spend * 1000) / i.cpmTarget
+        : i.impressions;
+    const effectiveCpm =
+      i.impressionsMode === "cpm"
+        ? i.cpmTarget
+        : effectiveImpressions > 0
+        ? (i.spend / effectiveImpressions) * 1000
+        : 0;
+    const clicks = effectiveImpressions * (i.ctr / 100);
     const lpv = clicks * (i.loadingSpeed / 100);
     const purchases = lpv * (i.convRatio / 100); // L0
     const showUps = purchases * (i.showUpRate / 100);
@@ -89,14 +115,15 @@ export function FunnelCalculator() {
     const netPL = revenue - i.spend;
     const roas = i.spend > 0 ? revenue / i.spend : 0;
     const cpr = purchases > 0 ? i.spend / purchases : 0;
-    const cpm = i.impressions > 0 ? (i.spend / i.impressions) * 1000 : 0;
     const cpc = clicks > 0 ? i.spend / clicks : 0;
 
     return {
+      impressions: effectiveImpressions,
+      cpm: effectiveCpm,
       clicks, lpv, purchases, showUps,
       l1Conversions, l2Conversions, l3Conversions,
       l0Revenue, l1Revenue, l2Revenue, l3Revenue,
-      revenue, netPL, roas, cpr, cpm, cpc,
+      revenue, netPL, roas, cpr, cpc,
     };
   }, [i]);
 
@@ -127,12 +154,53 @@ export function FunnelCalculator() {
             step={1000}
             onChange={set("spend")}
           />
-          <NumberRow
-            label="Impressions"
-            value={i.impressions}
-            step={1000}
-            onChange={set("impressions")}
-          />
+          {/* Impressions mode toggle */}
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <label className="text-sm text-zinc-300">Volume input</label>
+              <div className="inline-flex overflow-hidden rounded-md border border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => set("impressionsMode")("manual")}
+                  className={`px-3 py-1 text-[10px] uppercase tracking-widest ${
+                    i.impressionsMode === "manual"
+                      ? "bg-orange-500 text-zinc-950"
+                      : "bg-zinc-950 text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Impressions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set("impressionsMode")("cpm")}
+                  className={`px-3 py-1 text-[10px] uppercase tracking-widest ${
+                    i.impressionsMode === "cpm"
+                      ? "bg-orange-500 text-zinc-950"
+                      : "bg-zinc-950 text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  CPM target
+                </button>
+              </div>
+            </div>
+            {i.impressionsMode === "manual" ? (
+              <NumberRow
+                label="Impressions"
+                value={i.impressions}
+                step={1000}
+                onChange={set("impressions")}
+              />
+            ) : (
+              <NumberRow
+                label="CPM target"
+                prefix="₹"
+                help={`implies ${Math.round(c.impressions).toLocaleString("en-IN")} impressions`}
+                value={i.cpmTarget}
+                step={10}
+                onChange={set("cpmTarget")}
+              />
+            )}
+          </div>
           <PercentRow label="CTR" value={i.ctr} step={0.1} max={20} onChange={set("ctr")} />
           <PercentRow
             label="Loading Speed"
@@ -258,7 +326,7 @@ export function FunnelCalculator() {
         <SectionHeader label="the funnel" className="mb-3" />
         <Panel className="p-5">
           <ol className="space-y-1">
-            <FunnelStep label="Impressions" value={i.impressions} first />
+            <FunnelStep label="Impressions" value={c.impressions} first />
             <FunnelDrop pct={i.ctr} note="CTR" />
             <FunnelStep label="Clicks" value={c.clicks} />
             <FunnelDrop pct={i.loadingSpeed} note="loading" />

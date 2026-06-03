@@ -29,10 +29,16 @@ function parseLeadDate(s: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// "days" semantics:
+//   null    → no start filter (all time)
+//   0       → only today (start = today 00:00, end = today 23:59)
+//   -1      → only yesterday (start = yesterday 00:00, end = yesterday 23:59)
+//   N > 0   → last N days (rolling)
 const RANGES = {
+  today: { label: "Today", days: 0 },
+  yesterday: { label: "Yesterday", days: -1 },
   "7d": { label: "Last 7 days", days: 7 },
   "30d": { label: "Last 30 days", days: 30 },
-  "90d": { label: "Last 90 days", days: 90 },
   all: { label: "All time", days: null as number | null },
 } as const;
 type RangeKey = keyof typeof RANGES;
@@ -90,17 +96,32 @@ export default async function ClientLeadsPage({
         }
 
         // Date range filter — custom (from/to) overrides preset
-        const startCutoff = hasCustom
-          ? new Date(`${customFrom}T00:00:00Z`)
-          : (() => {
-              const cfg = RANGES[range];
-              if (cfg.days == null) return null;
-              const d = new Date();
-              d.setUTCDate(d.getUTCDate() - cfg.days);
-              d.setUTCHours(0, 0, 0, 0);
-              return d;
-            })();
-        const endCutoff = hasCustom ? new Date(`${customTo}T23:59:59Z`) : null;
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setUTCHours(23, 59, 59, 999);
+
+        const { startCutoff, endCutoff } = (() => {
+          if (hasCustom) {
+            return {
+              startCutoff: new Date(`${customFrom}T00:00:00Z`),
+              endCutoff: new Date(`${customTo}T23:59:59Z`),
+            };
+          }
+          const cfg = RANGES[range];
+          if (cfg.days == null) return { startCutoff: null, endCutoff: null };
+          if (cfg.days === 0) return { startCutoff: todayStart, endCutoff: todayEnd };
+          if (cfg.days === -1) {
+            const y0 = new Date(todayStart);
+            y0.setUTCDate(y0.getUTCDate() - 1);
+            const y1 = new Date(todayEnd);
+            y1.setUTCDate(y1.getUTCDate() - 1);
+            return { startCutoff: y0, endCutoff: y1 };
+          }
+          const d = new Date(todayStart);
+          d.setUTCDate(d.getUTCDate() - cfg.days);
+          return { startCutoff: d, endCutoff: null };
+        })();
 
         rows = dataRows
           .filter((r) => {

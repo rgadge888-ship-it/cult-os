@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCurrentClientContext } from "@/lib/sheets/client-context";
 import {
   getSheetMetadataAsAgency,
@@ -19,11 +20,21 @@ function findHeaderIdx(rows: string[][], scan = 4): number {
   return best;
 }
 
-export default async function ClientDailyDataPage() {
+export default async function ClientDailyDataPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>;
+}) {
+  const sp = await searchParams;
+  const customFrom = sp.from?.trim() ?? "";
+  const customTo = sp.to?.trim() ?? "";
+  const hasCustom = Boolean(customFrom && customTo);
+
   const { client } = await getCurrentClientContext();
 
   let headers: string[] = [];
   let rows: string[][] = [];
+  let totalDays = 0;
   let err: string | null = null;
   let tabTitle: string | null = null;
 
@@ -42,25 +53,30 @@ export default async function ClientDailyDataPage() {
         );
         const hIdx = findHeaderIdx(values);
         headers = (values[hIdx] ?? []).map((h) => h.trim());
-        rows = values
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const parsedRows = values
           .slice(hIdx + 1)
           .filter((r) => r.some((c) => (c ?? "").trim() !== ""))
-          // Filter to rows with a valid parseable date in column 0 — drops
-          // future-dated placeholder rows. Sort newest first for display.
-          .filter((r) => parseDateRange(((r[0] ?? "").toString().trim())) != null)
-          .filter((r) => {
-            const dr = parseDateRange((r[0] ?? "").toString().trim());
-            if (!dr) return false;
-            return dr.start <= new Date().toISOString().slice(0, 10);
+          .map((r) => {
+            const dr = parseDateRange(((r[0] ?? "").toString().trim()));
+            return dr ? { row: r, iso: dr.start } : null;
           })
-          .reverse();
+          .filter(Boolean) as { row: string[]; iso: string }[];
+
+        totalDays = parsedRows.length;
+
+        const filtered = parsedRows.filter(({ iso }) => {
+          if (iso > todayIso) return false; // no future
+          if (hasCustom) return iso >= customFrom && iso <= customTo;
+          return true;
+        });
+        rows = filtered.map((p) => p.row).reverse(); // newest first
       }
     } catch (e) {
       err = e instanceof Error ? e.message : "Failed to read the Mainsheet.";
     }
   }
 
-  // Compute simple totals across the visible rows (handy as a header strip)
   const head = headers.map((h) => h.toLowerCase());
   const iSpend = head.findIndex((h) => h === "with gst" || h === "ad spend" || h === "spend");
   const iReg = head.findIndex((h) => h.includes("registration") && !h.includes("fb"));
@@ -83,13 +99,54 @@ export default async function ClientDailyDataPage() {
           Daily Ad Spend
         </h1>
         <p className="text-sm text-zinc-500">
-          straight from your Mainsheet · {rows.length.toLocaleString("en-IN")} days
+          straight from your Mainsheet ·{" "}
+          {rows.length.toLocaleString("en-IN")} of {totalDays.toLocaleString("en-IN")} days
         </p>
+      </div>
+
+      {/* Date filter */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <form action="/client/daily-data" className="flex items-center gap-1">
+          <span className="mr-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+            range
+          </span>
+          <input
+            type="date"
+            name="from"
+            defaultValue={customFrom}
+            className={`h-8 rounded-md border bg-zinc-950 px-2 text-xs focus:border-orange-500 focus:outline-none ${
+              hasCustom ? "border-orange-500 text-orange-300" : "border-zinc-800 text-zinc-300"
+            }`}
+          />
+          <span className="text-zinc-700">→</span>
+          <input
+            type="date"
+            name="to"
+            defaultValue={customTo}
+            className={`h-8 rounded-md border bg-zinc-950 px-2 text-xs focus:border-orange-500 focus:outline-none ${
+              hasCustom ? "border-orange-500 text-orange-300" : "border-zinc-800 text-zinc-300"
+            }`}
+          />
+          <button
+            type="submit"
+            className="h-8 rounded-md border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-300 hover:border-orange-500 hover:text-orange-300"
+          >
+            apply
+          </button>
+          {hasCustom ? (
+            <Link
+              href="/client/daily-data"
+              className="ml-1 h-8 rounded-md border border-zinc-800 px-3 text-[10px] uppercase tracking-widest leading-[1.95rem] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+            >
+              clear
+            </Link>
+          ) : null}
+        </form>
       </div>
 
       {/* Totals strip */}
       {rows.length > 0 ? (
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Stat label="Spend (window)" value={inr(totalSpend)} />
           <Stat label="Registrations" value={totalReg.toLocaleString("en-IN")} />
           <Stat label="Revenue" value={inr(totalRev)} accent />
@@ -111,7 +168,7 @@ export default async function ClientDailyDataPage() {
             <div className="px-6 py-10 text-center text-sm text-red-400">{err}</div>
           ) : rows.length === 0 ? (
             <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              No daily data yet.
+              No daily data in this range.
             </div>
           ) : (
             <div className="overflow-x-auto">

@@ -202,8 +202,19 @@ export function parseDateRange(
   const b = parts[1] ? parseOne(parts[1], a?.month ?? null) : a;
   if (!a || !b) return null;
 
-  const start = new Date(Date.UTC(year, a.month, a.day));
-  const end = new Date(Date.UTC(year, b.month, b.day));
+  let start = new Date(Date.UTC(year, a.month, a.day));
+  let end = new Date(Date.UTC(year, b.month, b.day));
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  // Year-less dates default to the current year, but if that lands a long way
+  // in the future (>60 days) the row is almost certainly historical — shift it
+  // back a year. e.g. "Nov 15" parsed in May 2026 means Nov 2025, not Nov 2026.
+  const todayMs = Date.now();
+  const SIX_WEEKS = 60 * 24 * 3600 * 1000;
+  if (start.getTime() > todayMs + SIX_WEEKS) {
+    start = new Date(Date.UTC(year - 1, a.month, a.day));
+    end = new Date(Date.UTC(year - 1, b.month, b.day));
+  }
+
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }

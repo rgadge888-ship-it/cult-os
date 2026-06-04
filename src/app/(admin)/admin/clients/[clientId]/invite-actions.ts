@@ -46,7 +46,11 @@ export async function createClientLogin(
   const admin = createAdminClient();
   const tempPassword = genPassword();
 
-  // Create the auth user (auto-confirmed so they can log in immediately).
+  // Either create the user or, if the email is already in auth.users, fetch
+  // them. Either way we end up with a userId we can link to the profile.
+  let userId: string | null = null;
+  let reused = false;
+
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email,
     password: tempPassword,
@@ -54,35 +58,62 @@ export async function createClientLogin(
     user_metadata: { full_name: fullName || client.name },
   });
 
-  if (createErr || !created.user) {
-    if (createErr?.message?.toLowerCase().includes("already")) {
-      return { error: "A user with that email already exists." };
+  if (created?.user) {
+    userId = created.user.id;
+  } else if (
+    createErr?.message?.toLowerCase().includes("already") ||
+    createErr?.message?.toLowerCase().includes("exists")
+  ) {
+    // Email already registered. Find the existing user and reset their
+    // password so the admin still gets a shareable credential.
+    const { data: existing } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    if (existing?.id) {
+      userId = existing.id;
+      reused = true;
+      const { error: pwErr } = await admin.auth.admin.updateUserById(userId, {
+        password: tempPassword,
+      });
+      if (pwErr) return { error: `Linking existing user failed: ${pwErr.message}` };
+    } else {
+      return {
+        error: "User exists in auth but has no profile row — please reset via Supabase dashboard.",
+      };
     }
+  } else {
     return { error: createErr?.message ?? "Failed to create login." };
   }
 
-  // The on_auth_user_created trigger created a profile row. Link it to this
-  // client and ensure role = client. Use service role to bypass RLS.
-  const { error: profileErr } = await admin
-    .from("profiles")
-    .update({
+  if (!userId) return { error: "Failed to resolve user id." };
+
+  // Idempotent: ensure the profile row exists AND is linked to this client
+  // with role=client. Upsert handles both fresh users and edge cases where
+  // the trigger didn't fire.
+  const { error: upsertErr } = await admin.from("profiles").upsert(
+    {
+      id: userId,
+      email,
       role: "client",
       client_id: clientId,
       full_name: fullName || client.name,
-    })
-    .eq("id", created.user.id);
+    },
+    { onConflict: "id" },
+  );
 
-  if (profileErr) {
-    return { error: `Login created but linking failed: ${profileErr.message}` };
+  if (upsertErr) {
+    return { error: `Login created but linking failed: ${upsertErr.message}` };
   }
 
   await admin.from("activity_log").insert({
     client_id: clientId,
     actor_id: profile.id,
-    action: "client.login_created",
+    action: reused ? "client.login_linked" : "client.login_created",
     subject_table: "profiles",
-    subject_id: created.user.id,
-    metadata: { email },
+    subject_id: userId,
+    metadata: { email, reused },
     client_visible: false,
   });
 

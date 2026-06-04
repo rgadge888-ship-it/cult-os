@@ -1,17 +1,23 @@
 "use client";
 
-import { useActionState } from "react";
-import { createClientLogin, type InviteState } from "./invite-actions";
+import { useActionState, useState } from "react";
+import {
+  createClientLogin,
+  resetUserPassword,
+  type InviteState,
+  type ResetState,
+} from "./invite-actions";
 import { Panel, SectionHeader } from "@/components/ui/section";
 
 const INITIAL: InviteState = {};
+const RESET_INITIAL: ResetState = {};
 
 export function InviteForm({
   clientId,
   existingLogins,
 }: {
   clientId: string;
-  existingLogins: { email: string; full_name: string | null }[];
+  existingLogins: { id: string; email: string; full_name: string | null }[];
 }) {
   const action = createClientLogin.bind(null, clientId);
   const [state, formAction, pending] = useActionState(action, INITIAL);
@@ -19,17 +25,17 @@ export function InviteForm({
   return (
     <div>
       <SectionHeader label="client login" className="mb-3" />
-      <Panel className="space-y-4 p-5">
+      <Panel className="space-y-5 p-5">
         {existingLogins.length > 0 ? (
-          <div className="space-y-1">
+          <div className="space-y-2">
             <p className="text-[10px] uppercase tracking-widest text-zinc-500">
               existing logins
             </p>
-            {existingLogins.map((l) => (
-              <p key={l.email} className="font-mono text-xs text-zinc-300">
-                {l.email} {l.full_name ? `· ${l.full_name}` : ""}
-              </p>
-            ))}
+            <ul className="space-y-2">
+              {existingLogins.map((l) => (
+                <ExistingLoginRow key={l.id} login={l} clientId={clientId} />
+              ))}
+            </ul>
           </div>
         ) : (
           <p className="text-sm text-zinc-400">
@@ -86,5 +92,79 @@ export function InviteForm({
         )}
       </Panel>
     </div>
+  );
+}
+
+function ExistingLoginRow({
+  login,
+  clientId,
+}: {
+  login: { id: string; email: string; full_name: string | null };
+  clientId: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const reset = resetUserPassword.bind(null, clientId, login.id);
+  const [state, formAction, pending] = useActionState(reset, RESET_INITIAL);
+
+  return (
+    <li className="space-y-2 rounded-md border border-zinc-900 bg-zinc-950/40 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono text-xs text-zinc-300">
+          {login.email}
+          {login.full_name ? (
+            <span className="text-zinc-500"> · {login.full_name}</span>
+          ) : null}
+        </p>
+        {state.ok ? null : confirming ? (
+          <form action={formAction} className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-amber-400">
+              confirm reset?
+            </span>
+            <button
+              type="submit"
+              disabled={pending}
+              className="inline-flex h-7 items-center rounded border border-red-700 px-3 text-[10px] uppercase tracking-widest text-red-300 hover:bg-red-950/40 disabled:opacity-60"
+            >
+              {pending ? "resetting…" : "yes, reset"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="inline-flex h-7 items-center rounded border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-400 hover:text-zinc-200"
+            >
+              cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="inline-flex h-7 items-center rounded border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-300 hover:border-orange-500 hover:text-orange-300"
+          >
+            reset password
+          </button>
+        )}
+      </div>
+      {state.ok ? (
+        <div className="rounded border border-emerald-700/50 bg-emerald-950/20 p-2">
+          <p className="text-[11px] text-emerald-300">Password reset.</p>
+          <div className="mt-1 space-y-0.5 font-mono text-xs">
+            <div className="flex gap-2">
+              <span className="text-zinc-500">email</span>
+              <span className="text-zinc-200">{state.email}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-zinc-500">new temp pw</span>
+              <span className="select-all text-orange-300">{state.tempPassword}</span>
+            </div>
+          </div>
+          <p className="mt-1 text-[10px] text-zinc-500">
+            Share via secure channel. Won't be shown again.
+          </p>
+        </div>
+      ) : state.error ? (
+        <p className="text-[11px] text-red-400">{state.error}</p>
+      ) : null}
+    </li>
   );
 }

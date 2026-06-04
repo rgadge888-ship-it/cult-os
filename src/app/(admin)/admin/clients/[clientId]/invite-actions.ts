@@ -89,3 +89,53 @@ export async function createClientLogin(
   revalidatePath(`/admin/clients/${clientId}`);
   return { ok: true, email, tempPassword };
 }
+
+export type ResetState = {
+  ok?: boolean;
+  email?: string;
+  tempPassword?: string;
+  error?: string;
+};
+
+// Reset password for any user (client login or admin). Super-admin only.
+// Returns a fresh temp password to share with the user out-of-band.
+export async function resetUserPassword(
+  clientId: string,
+  userId: string,
+  _prev: ResetState,
+  _fd: FormData,
+): Promise<ResetState> {
+  const { profile } = await requireUser({ adminOnly: true });
+  if (profile.role !== "super_admin") {
+    return { error: "Only the super admin can reset passwords." };
+  }
+
+  const admin = createAdminClient();
+
+  // Look up the target user to confirm + get email for display.
+  const { data: target, error: getErr } = await admin.auth.admin.getUserById(userId);
+  if (getErr || !target.user) {
+    return { error: getErr?.message ?? "User not found." };
+  }
+
+  const tempPassword = genPassword();
+  const { error: updErr } = await admin.auth.admin.updateUserById(userId, {
+    password: tempPassword,
+  });
+  if (updErr) {
+    return { error: updErr.message };
+  }
+
+  await admin.from("activity_log").insert({
+    client_id: clientId,
+    actor_id: profile.id,
+    action: "client.password_reset",
+    subject_table: "profiles",
+    subject_id: userId,
+    metadata: { email: target.user.email },
+    client_visible: false,
+  });
+
+  revalidatePath(`/admin/clients/${clientId}`);
+  return { ok: true, email: target.user.email ?? "", tempPassword };
+}

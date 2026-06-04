@@ -45,7 +45,7 @@ export default async function ClientDetailPage({
       .limit(10),
     supabase
       .from("profiles")
-      .select("email, full_name")
+      .select("id, email, full_name")
       .eq("client_id", clientId)
       .eq("role", "client"),
     supabase

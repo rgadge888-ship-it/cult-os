@@ -144,6 +144,11 @@ export const FIELD_LABELS: Record<MetricField, string> = {
 };
 
 // Parse a "May 13 - May 18" style range into ISO start/end dates.
+// Also handles single dates in several common formats:
+//   "May 13", "May-13"    — month-name + day (current year assumed)
+//   "13 May 2026"          — day + month + year
+//   "13/05/2026"           — DD/MM/YYYY (Indian/UK convention)
+//   "2026-05-13"           — ISO
 export function parseDateRange(
   range: string,
   year = new Date().getUTCFullYear(),
@@ -153,11 +158,32 @@ export function parseDateRange(
     may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7, september: 8,
     sep: 8, sept: 8, october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11,
   };
+
+  const isoFor = (d: Date) => d.toISOString().slice(0, 10);
+  const single = (d: Date) => ({ start: isoFor(d), end: isoFor(d) });
+
+  const trimmed = range.trim();
+  if (!trimmed) return null;
+
+  // ISO YYYY-MM-DD
+  const iso = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    const d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+    if (!Number.isNaN(d.getTime())) return single(d);
+  }
+
+  // DD/MM/YYYY (Indian sheets default)
+  const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    const d = new Date(Date.UTC(+dmy[3], +dmy[2] - 1, +dmy[1]));
+    if (!Number.isNaN(d.getTime())) return single(d);
+  }
+
   // Split only when the separator is surrounded by whitespace (or "to" word).
   // This keeps "May-13" as a single date while "May 13 - May 18" splits into a
   // range. Daily Datasheet uses "May-13" format; weekly reports use the spaced
   // hyphen form.
-  const parts = range
+  const parts = trimmed
     .split(/\s+(?:-|–|—|to)\s+/i)
     .map((p) => p.trim())
     .filter(Boolean);

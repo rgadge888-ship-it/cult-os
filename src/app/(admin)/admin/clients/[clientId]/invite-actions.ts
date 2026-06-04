@@ -72,9 +72,10 @@ export async function createClientLogin(
       .eq("email", email)
       .maybeSingle();
     if (existing?.id) {
-      userId = existing.id;
+      const existingId: string = existing.id;
+      userId = existingId;
       reused = true;
-      const { error: pwErr } = await admin.auth.admin.updateUserById(userId, {
+      const { error: pwErr } = await admin.auth.admin.updateUserById(existingId, {
         password: tempPassword,
       });
       if (pwErr) return { error: `Linking existing user failed: ${pwErr.message}` };

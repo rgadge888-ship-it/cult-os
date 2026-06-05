@@ -51,7 +51,7 @@ export default async function ClientDailyDataPage({
         tabTitle = tab.title;
         const values = await getSheetValuesAsAgency(
           client.mainsheet_file_id,
-          `'${tab.title}'!A1:Z200`,
+          `'${tab.title}'!A:Z`,
           { formatted: true },
         );
         const hIdx = findHeaderIdx(values);

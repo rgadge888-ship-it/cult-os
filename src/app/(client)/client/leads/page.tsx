@@ -109,7 +109,9 @@ export default async function ClientLeadsPage({
       } else {
         const values = await getSheetValuesAsAgency(
           client.mainsheet_file_id,
-          `'${tab.title}'!A1:Z5000`,
+          // No row cap — clients accumulate years of leads (10k+ rows). A fixed
+          // cap silently hid the newest leads below the cutoff row.
+          `'${tab.title}'!A:Z`,
           { formatted: true },
         );
         headers = (values[0] ?? []).filter((c) => c.trim() !== "");

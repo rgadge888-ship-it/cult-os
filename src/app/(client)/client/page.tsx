@@ -278,8 +278,10 @@ async function CurrentWebinarSection({
     }
     const ranges = [
       `'${scheduleTab}'!A1:Z200`,
-      `'${leadsTab}'!A1:Z3000`,
-      `'${dailyTab}'!A1:Z60`,
+      // No row cap — leads grow to 10k+ rows; the newest (this webinar's) sit
+      // at the bottom and were being cut off by a fixed cap.
+      `'${leadsTab}'!A:Z`,
+      `'${dailyTab}'!A:Z`,
     ];
     const batch = await getSheetValuesBatchAsAgency(fileId, ranges, { formatted: true });
     const sched = batch[ranges[0]] ?? [];
@@ -488,7 +490,7 @@ async function DailySpendSection({
         </Panel>
       );
     }
-    const range = `'${dailyTab.title}'!A1:Z60`;
+    const range = `'${dailyTab.title}'!A:Z`;
     const batch = await getSheetValuesBatchAsAgency(fileId, [range], {
       formatted: true,
     });

@@ -20,7 +20,7 @@ export async function generateWeeklyReport(
 
   const { data: client } = await supabase
     .from("clients")
-    .select("id, name, mainsheet_file_id")
+    .select("id, name, mainsheet_file_id, tab_map")
     .eq("id", clientId)
     .single();
 
@@ -30,7 +30,11 @@ export async function generateWeeklyReport(
 
   let data;
   try {
-    data = await buildWeeklyReport(user.id, client.mainsheet_file_id);
+    data = await buildWeeklyReport(
+      user.id,
+      client.mainsheet_file_id,
+      (client.tab_map ?? {}) as Record<string, string>,
+    );
   } catch (e) {
     if (e instanceof Error && e.message === "google_not_connected") {
       return { error: "Google Sheets isn't connected. Connect it in Settings first." };

@@ -4,6 +4,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
+import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { Panel, SectionHeader } from "@/components/ui/section";
 
 function findHeaderIdx(rows: string[][], scan = 4): number {
@@ -44,7 +45,9 @@ export default async function ClientWebinarReportsPage() {
   if (client?.mainsheet_file_id) {
     try {
       const meta = await getSheetMetadataAsAgency(client.mainsheet_file_id);
-      const tab = meta.tabs.find((t) => /webinar/i.test(t.title));
+      const _titles = meta.tabs.map((t) => t.title);
+      const _tabTitle = resolveTabTitle("webinar", client.tab_map, _titles);
+      const tab = _tabTitle ? meta.tabs.find((t) => t.title === _tabTitle) : null;
       if (!tab) {
         err = "Couldn't find a Webinar Data tab in your Mainsheet.";
       } else {

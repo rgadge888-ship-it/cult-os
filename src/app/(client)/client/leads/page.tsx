@@ -4,6 +4,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
+import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { Panel, SectionHeader } from "@/components/ui/section";
 
 // Try to parse the Leadsheet's Timestamp column. Pabbly typically writes
@@ -66,7 +67,9 @@ export default async function ClientLeadsPage({
   if (client?.mainsheet_file_id) {
     try {
       const meta = await getSheetMetadataAsAgency(client.mainsheet_file_id);
-      const tab = meta.tabs.find((t) => /lead/i.test(t.title));
+      const titles = meta.tabs.map((t) => t.title);
+      const tabTitle = resolveTabTitle("leads", client.tab_map, titles);
+      const tab = tabTitle ? meta.tabs.find((t) => t.title === tabTitle) : null;
       if (!tab) {
         err = "Couldn't find a Leads tab in your Mainsheet.";
       } else {

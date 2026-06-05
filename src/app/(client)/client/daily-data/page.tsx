@@ -4,6 +4,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
+import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { parseNumber, parseDateRange } from "@/lib/reports/parse";
 
@@ -41,7 +42,9 @@ export default async function ClientDailyDataPage({
   if (client?.mainsheet_file_id) {
     try {
       const meta = await getSheetMetadataAsAgency(client.mainsheet_file_id);
-      const tab = meta.tabs.find((t) => /daily/i.test(t.title));
+      const titles = meta.tabs.map((t) => t.title);
+      const resolved = resolveTabTitle("daily", client.tab_map, titles);
+      const tab = resolved ? meta.tabs.find((t) => t.title === resolved) : null;
       if (!tab) {
         err = "Couldn't find a Daily Data tab in your Mainsheet.";
       } else {

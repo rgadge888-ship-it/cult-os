@@ -1,4 +1,5 @@
 import { getSheetMetadata, getSheetValues } from "@/lib/google/sheets";
+import { resolveTabTitle, type TabMap } from "@/lib/sheets/tabs";
 import { matchColumns, parseNumber } from "./parse";
 import type {
   CreativeRow,
@@ -44,15 +45,14 @@ function rowToMetrics(
 export async function buildWeeklyReport(
   userId: string,
   fileId: string,
+  tabMap: TabMap = {},
 ): Promise<WeeklyReportData> {
   const warnings: string[] = [];
   const meta = await getSheetMetadata(userId, fileId);
   const titles = meta.tabs.map((t) => t.title);
 
-  const find = (re: RegExp) => titles.find((t) => re.test(t));
-
   // --- Weekly metrics table (the core) ---
-  const weeklyTab = find(/weekly/i);
+  const weeklyTab = resolveTabTitle("weekly", tabMap, titles);
   if (!weeklyTab) {
     throw new Error("No 'Weekly' tab found in the Mainsheet.");
   }
@@ -98,7 +98,7 @@ export async function buildWeeklyReport(
 
   // --- Latest webinar (from the Webinar Data tab) ---
   let latestWebinar: WebinarSnapshot | null = null;
-  const webinarTab = find(/webinar/i);
+  const webinarTab = resolveTabTitle("webinar", tabMap, titles);
   if (webinarTab) {
     try {
       const wRows = await getSheetValues(userId, fileId, `'${webinarTab}'!A1:AZ200`, {
@@ -131,7 +131,7 @@ export async function buildWeeklyReport(
 
   // --- Top creatives (from the Creative Tracking Sheet) ---
   const topCreatives: CreativeRow[] = [];
-  const creativeTab = find(/creative/i);
+  const creativeTab = resolveTabTitle("creative", tabMap, titles);
   if (creativeTab) {
     try {
       const cRows = await getSheetValues(userId, fileId, `'${creativeTab}'!A1:BZ200`, {

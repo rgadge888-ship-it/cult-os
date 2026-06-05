@@ -8,6 +8,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesBatchAsAgency,
 } from "@/lib/google/sheets";
+import { resolveTabTitle, type TabMap } from "@/lib/sheets/tabs";
 import { parseNumber, parseDateRange } from "@/lib/reports/parse";
 import type { WeeklyReport, WeeklyReportData } from "@/lib/db/types";
 
@@ -57,6 +58,7 @@ export default async function ClientDashboardPage() {
   const m = latestReport?.data.current.metrics;
   const targetCpl = m?.cost_per_acq?.value ?? null;
   const fileId = client?.mainsheet_file_id ?? null;
+  const tabMap = client?.tab_map ?? {};
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
@@ -76,7 +78,7 @@ export default async function ClientDashboardPage() {
       <div className="mt-8">
         <SectionHeader label="this month" className="mb-3" />
         <Suspense fallback={<MonthlySkeleton />}>
-          <MonthlyCumulativeSection fileId={fileId} />
+          <MonthlyCumulativeSection fileId={fileId} tabMap={tabMap} />
         </Suspense>
       </div>
 
@@ -117,7 +119,7 @@ export default async function ClientDashboardPage() {
               </p>
             }
           >
-            <WeekTagLine fileId={fileId} range={{
+            <WeekTagLine fileId={fileId} tabMap={tabMap} range={{
               start: latestReport.week_start_date,
               end: latestReport.week_end_date,
             }} />
@@ -129,7 +131,7 @@ export default async function ClientDashboardPage() {
       <div className="mt-10">
         <SectionHeader label="current webinar" className="mb-3" />
         <Suspense fallback={<CurrentWebinarSkeleton />}>
-          <CurrentWebinarSection fileId={fileId} targetCpl={targetCpl} />
+          <CurrentWebinarSection fileId={fileId} tabMap={tabMap} targetCpl={targetCpl} />
         </Suspense>
       </div>
 
@@ -148,7 +150,7 @@ export default async function ClientDashboardPage() {
           }
         />
         <Suspense fallback={<DailySpendSkeleton />}>
-          <DailySpendSection fileId={fileId} />
+          <DailySpendSection fileId={fileId} tabMap={tabMap} />
         </Suspense>
       </div>
 
@@ -189,16 +191,19 @@ export default async function ClientDashboardPage() {
 
 async function WeekTagLine({
   fileId,
+  tabMap,
   range,
 }: {
   fileId: string | null;
+  tabMap: TabMap;
   range: { start: string; end: string };
 }) {
   if (!fileId) return null;
   let tags: string[] = [];
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
-    const scheduleTab = meta.tabs.find((t) => /schedule|internal sheet/i.test(t.title));
+    const schedTitle = resolveTabTitle("schedule", tabMap, meta.tabs.map((t) => t.title));
+    const scheduleTab = schedTitle ? meta.tabs.find((t) => t.title === schedTitle) : null;
     if (!scheduleTab) return null;
     const batch = await getSheetValuesBatchAsAgency(
       fileId,
@@ -236,9 +241,11 @@ async function WeekTagLine({
 
 async function CurrentWebinarSection({
   fileId,
+  tabMap,
   targetCpl,
 }: {
   fileId: string | null;
+  tabMap: TabMap;
   targetCpl: number | null;
 }) {
   if (!fileId) {
@@ -263,9 +270,9 @@ async function CurrentWebinarSection({
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
     const titles = meta.tabs.map((t) => t.title);
-    const scheduleTab = titles.find((t) => /schedule|internal sheet/i.test(t));
-    const leadsTab = titles.find((t) => /leadsheet|^leads$/i.test(t));
-    const dailyTab = titles.find((t) => /daily/i.test(t));
+    const scheduleTab = resolveTabTitle("schedule", tabMap, titles);
+    const leadsTab = resolveTabTitle("leads", tabMap, titles);
+    const dailyTab = resolveTabTitle("daily", tabMap, titles);
     if (!scheduleTab || !leadsTab || !dailyTab) {
       throw new Error("missing tabs");
     }
@@ -454,7 +461,13 @@ async function CurrentWebinarSection({
   );
 }
 
-async function DailySpendSection({ fileId }: { fileId: string | null }) {
+async function DailySpendSection({
+  fileId,
+  tabMap,
+}: {
+  fileId: string | null;
+  tabMap: TabMap;
+}) {
   if (!fileId) {
     return (
       <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
@@ -466,7 +479,8 @@ async function DailySpendSection({ fileId }: { fileId: string | null }) {
   let dailySpend: { date: string; spend: number; raw: string }[] = [];
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
-    const dailyTab = meta.tabs.find((t) => /daily/i.test(t.title));
+    const dailyTitle = resolveTabTitle("daily", tabMap, meta.tabs.map((t) => t.title));
+    const dailyTab = dailyTitle ? meta.tabs.find((t) => t.title === dailyTitle) : null;
     if (!dailyTab) {
       return (
         <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
@@ -588,11 +602,18 @@ function MonthlySkeleton() {
   );
 }
 
-async function MonthlyCumulativeSection({ fileId }: { fileId: string | null }) {
+async function MonthlyCumulativeSection({
+  fileId,
+  tabMap,
+}: {
+  fileId: string | null;
+  tabMap: TabMap;
+}) {
   if (!fileId) return null;
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
-    const monthlyTab = meta.tabs.find((t) => /monthly/i.test(t.title));
+    const monthlyTitle = resolveTabTitle("monthly", tabMap, meta.tabs.map((t) => t.title));
+    const monthlyTab = monthlyTitle ? meta.tabs.find((t) => t.title === monthlyTitle) : null;
     if (!monthlyTab) {
       return (
         <Panel className="px-6 py-6 text-center text-sm text-zinc-500">

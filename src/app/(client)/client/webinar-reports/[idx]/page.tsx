@@ -5,6 +5,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
+import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { parseNumber } from "@/lib/reports/parse";
 
@@ -48,7 +49,12 @@ export default async function WebinarDetailPage({
   if (!client?.mainsheet_file_id) notFound();
 
   const meta = await getSheetMetadataAsAgency(client.mainsheet_file_id);
-  const tab = meta.tabs.find((t) => /webinar/i.test(t.title));
+  const tabTitle = resolveTabTitle(
+    "webinar",
+    client.tab_map,
+    meta.tabs.map((t) => t.title),
+  );
+  const tab = tabTitle ? meta.tabs.find((t) => t.title === tabTitle) : null;
   if (!tab) notFound();
 
   const values = await getSheetValuesAsAgency(

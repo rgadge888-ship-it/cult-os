@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { StatusPill } from "@/components/ui/status-pill";
-import { MainsheetPreview } from "./preview-tabs";
+import { MainsheetPreview, MainsheetTabMapping } from "./preview-tabs";
 import { GenerateReportButton } from "./reports/generate-button";
 import { InviteForm } from "./invite-form";
 import { NewTaskForm } from "../../tasks/new-task-form";
@@ -302,6 +302,16 @@ export default async function ClientDetailPage({
       {/* Client login */}
       <div className="mt-10">
         <InviteForm clientId={c.id} existingLogins={logins ?? []} />
+      </div>
+
+      {/* Tab mapping — pin each Cult OS section to the right sheet tab */}
+      <div className="mt-10">
+        <MainsheetTabMapping
+          userId={user.id}
+          clientId={c.id}
+          fileId={c.mainsheet_file_id}
+          tabMap={c.tab_map ?? {}}
+        />
       </div>
 
       {/* Live preview of the linked Mainsheet (requires Google connected) */}

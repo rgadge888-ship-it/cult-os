@@ -58,6 +58,7 @@ export type Client = {
   mainsheet_file_id: string | null;
   mainsheet_url: string | null;
   sheets_connected_at: string | null;
+  tab_map: Record<string, string>;
   notes: string | null;
   created_at: string;
   updated_at: string;

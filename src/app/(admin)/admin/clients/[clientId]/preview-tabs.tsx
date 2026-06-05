@@ -1,6 +1,52 @@
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { getGoogleConnectionStatus } from "@/lib/google/status";
 import { getSheetMetadata, getTabHeaderRows } from "@/lib/google/sheets";
+import { TAB_ROLES, autoGuess, type TabRole } from "@/lib/sheets/tabs";
+import { TabMapForm } from "./tab-map-form";
+
+// Tab mapping panel — reads the live tab list + lets the admin pin each
+// canonical role to an actual tab. Sits above the preview on the client page.
+export async function MainsheetTabMapping({
+  userId,
+  clientId,
+  fileId,
+  tabMap,
+}: {
+  userId: string;
+  clientId: string;
+  fileId: string | null;
+  tabMap: Record<string, string>;
+}) {
+  if (!fileId) return null;
+  const status = await getGoogleConnectionStatus(userId);
+  if (!status.connected) return null;
+
+  let titles: string[] = [];
+  try {
+    const meta = await getSheetMetadata(userId, fileId);
+    titles = meta.tabs.map((t) => t.title);
+  } catch {
+    return null;
+  }
+  if (titles.length === 0) return null;
+
+  const guesses: Partial<Record<TabRole, string | null>> = {};
+  for (const { role } of TAB_ROLES) guesses[role] = autoGuess(role, titles);
+
+  return (
+    <div>
+      <SectionHeader label="tab mapping" className="mb-3" />
+      <Panel>
+        <TabMapForm
+          clientId={clientId}
+          availableTitles={titles}
+          current={tabMap ?? {}}
+          guesses={guesses}
+        />
+      </Panel>
+    </div>
+  );
+}
 
 export async function MainsheetPreview({
   userId,

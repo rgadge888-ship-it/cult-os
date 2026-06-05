@@ -3,6 +3,7 @@ import {
   getSheetMetadataAsAgency,
   getSheetValuesAsAgency,
 } from "@/lib/google/sheets";
+import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { parseNumber } from "@/lib/reports/parse";
 
@@ -43,7 +44,9 @@ export default async function ClientCreativesPage() {
   if (client?.mainsheet_file_id) {
     try {
       const meta = await getSheetMetadataAsAgency(client.mainsheet_file_id);
-      const tab = meta.tabs.find((t) => /creative/i.test(t.title));
+      const _titles = meta.tabs.map((t) => t.title);
+      const _tabTitle = resolveTabTitle("creative", client.tab_map, _titles);
+      const tab = _tabTitle ? meta.tabs.find((t) => t.title === _tabTitle) : null;
       if (!tab) {
         err = "Couldn't find a Creative Tracking tab in your Mainsheet.";
       } else {

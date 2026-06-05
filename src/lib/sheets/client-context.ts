@@ -11,7 +11,7 @@ export async function getCurrentClientContext() {
   }
   const { data: client } = await supabase
     .from("clients")
-    .select("id, name, mainsheet_file_id, mainsheet_url")
+    .select("id, name, mainsheet_file_id, mainsheet_url, tab_map")
     .eq("id", profile.client_id)
     .single();
   return { profile, client };

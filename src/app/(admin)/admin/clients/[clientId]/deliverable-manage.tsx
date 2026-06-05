@@ -55,7 +55,11 @@ export function DeliverableManage({
           <button
             type="button"
             disabled={loading}
-            onClick={() => startLoad(() => loadLaunchChecklist(clientId))}
+            onClick={() =>
+              startLoad(async () => {
+                await loadLaunchChecklist(clientId);
+              })
+            }
             className="inline-flex h-8 items-center rounded-md border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-300 hover:border-orange-500 hover:text-orange-300 disabled:opacity-60"
           >
             {loading ? "Loading…" : "Load launch checklist (21 items)"}

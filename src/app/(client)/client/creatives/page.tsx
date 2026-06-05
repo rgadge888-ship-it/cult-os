@@ -52,7 +52,7 @@ export default async function ClientCreativesPage() {
       } else {
         const values = await getSheetValuesAsAgency(
           client.mainsheet_file_id,
-          `'${tab.title}'!A1:BZ200`,
+          `'${tab.title}'!A:BZ`,
           { formatted: true },
         );
         const hIdx = findHeaderIdx(values);

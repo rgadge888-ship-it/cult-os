@@ -207,10 +207,10 @@ async function WeekTagLine({
     if (!scheduleTab) return null;
     const batch = await getSheetValuesBatchAsAgency(
       fileId,
-      [`'${scheduleTab.title}'!A1:Z200`],
+      [`'${scheduleTab.title}'!A:Z`],
       { formatted: true },
     );
-    const sched = batch[`'${scheduleTab.title}'!A1:Z200`] ?? [];
+    const sched = batch[`'${scheduleTab.title}'!A:Z`] ?? [];
     if (sched.length < 2) return null;
     const head = sched[0].map((h) => h.toLowerCase());
     const iTag = head.findIndex((h) => h.includes("workshop tag") || h.includes("tag"));
@@ -277,7 +277,7 @@ async function CurrentWebinarSection({
       throw new Error("missing tabs");
     }
     const ranges = [
-      `'${scheduleTab}'!A1:Z200`,
+      `'${scheduleTab}'!A:Z`,
       // No row cap — leads grow to 10k+ rows; the newest (this webinar's) sit
       // at the bottom and were being cut off by a fixed cap.
       `'${leadsTab}'!A:Z`,
@@ -626,10 +626,10 @@ async function MonthlyCumulativeSection({
 
     const batch = await getSheetValuesBatchAsAgency(
       fileId,
-      [`'${monthlyTab.title}'!A1:Z200`],
+      [`'${monthlyTab.title}'!A:Z`],
       { formatted: true },
     );
-    const rows = batch[`'${monthlyTab.title}'!A1:Z200`] ?? [];
+    const rows = batch[`'${monthlyTab.title}'!A:Z`] ?? [];
     if (rows.length < 2) {
       return (
         <Panel className="px-6 py-6 text-center text-sm text-zinc-500">

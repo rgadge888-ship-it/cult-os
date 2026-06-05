@@ -59,7 +59,7 @@ export default async function WebinarDetailPage({
 
   const values = await getSheetValuesAsAgency(
     client.mainsheet_file_id,
-    `'${tab.title}'!A1:AZ200`,
+    `'${tab.title}'!A:AZ`,
     { formatted: true },
   );
   const hIdx = findHeaderIdx(values);

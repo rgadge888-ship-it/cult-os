@@ -57,7 +57,7 @@ export async function buildWeeklyReport(
     throw new Error("No 'Weekly' tab found in the Mainsheet.");
   }
 
-  const weeklyRows = await getSheetValues(userId, fileId, `'${weeklyTab}'!A1:AZ200`, {
+  const weeklyRows = await getSheetValues(userId, fileId, `'${weeklyTab}'!A:AZ`, {
     formatted: true,
   });
   const headerIdx = findHeaderRow(weeklyRows);
@@ -101,7 +101,7 @@ export async function buildWeeklyReport(
   const webinarTab = resolveTabTitle("webinar", tabMap, titles);
   if (webinarTab) {
     try {
-      const wRows = await getSheetValues(userId, fileId, `'${webinarTab}'!A1:AZ200`, {
+      const wRows = await getSheetValues(userId, fileId, `'${webinarTab}'!A:AZ`, {
         formatted: true,
       });
       const wHeaderIdx = findHeaderRow(wRows);
@@ -134,7 +134,7 @@ export async function buildWeeklyReport(
   const creativeTab = resolveTabTitle("creative", tabMap, titles);
   if (creativeTab) {
     try {
-      const cRows = await getSheetValues(userId, fileId, `'${creativeTab}'!A1:BZ200`, {
+      const cRows = await getSheetValues(userId, fileId, `'${creativeTab}'!A:BZ`, {
         formatted: true,
       });
       const cHeaderIdx = findHeaderRow(cRows, 4);

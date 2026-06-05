@@ -7,27 +7,53 @@ import {
 import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { Panel, SectionHeader } from "@/components/ui/section";
 
-// Try to parse the Leadsheet's Timestamp column. Pabbly typically writes
-// "13/05/2026 11:22:47" (DD/MM/YYYY). Also accept ISO and "MMM D, YYYY".
+// Parse a lead timestamp into a UTC date (time-of-day ignored — we filter by
+// calendar day). Handles the many shapes Pabbly / Google Forms / TagMango emit:
+//   13/05/2026 11:22:47          DD/MM/YYYY  (Indian default)
+//   13/05/2026 01:09:54 PM       + 12h clock
+//   22/8/2025, 2:35:13 pm        single-digit + comma + am/pm
+//   13-05-2026                   dash separators
+//   2026-05-13[T ]...            ISO
+//   13/05/26                     2-digit year
 function parseLeadDate(s: string): Date | null {
   if (!s) return null;
   const trimmed = s.trim();
-  // DD/MM/YYYY HH:MM:SS or DD/MM/YYYY
-  const m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-  if (m) {
-    return new Date(
-      Date.UTC(
-        Number(m[3]),
-        Number(m[2]) - 1,
-        Number(m[1]),
-        Number(m[4] ?? 0),
-        Number(m[5] ?? 0),
-        Number(m[6] ?? 0),
-      ),
-    );
+
+  // ISO first (unambiguous)
+  const iso = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
   }
+
+  // DD/MM/YYYY or DD-MM-YYYY (day first — Indian convention). Year may be 2 or 4
+  // digits. Anything after the date (time, am/pm, comma) is ignored for the day
+  // bucket.
+  const m = trimmed.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
+  if (m) {
+    let year = +m[3];
+    if (year < 100) year += year < 70 ? 2000 : 1900; // 26 -> 2026
+    const day = +m[1];
+    const month = +m[2] - 1;
+    // Sanity: reject impossible day/month combos so a stray "2026/05/13" that
+    // slipped past the ISO check doesn't become day 2026.
+    if (month < 0 || month > 11 || day < 1 || day > 31) return null;
+    const d = new Date(Date.UTC(year, month, day));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // Last resort: let JS try (handles "May 13, 2026" etc).
   const d = new Date(trimmed);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDay(d: Date): string {
+  return d.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 // "days" semantics:
@@ -53,7 +79,9 @@ export default async function ClientLeadsPage({
   const customFrom = sp.from?.trim() ?? "";
   const customTo = sp.to?.trim() ?? "";
   const hasCustom = Boolean(customFrom && customTo);
-  const range = (sp.range && sp.range in RANGES ? sp.range : "30d") as RangeKey;
+  // Default to "all" — lead activity is bursty around webinars, so a 30-day
+  // default often shows nothing and looks broken. Show everything, let them narrow.
+  const range = (sp.range && sp.range in RANGES ? sp.range : "all") as RangeKey;
   const tagFilter = sp.tag?.trim() ?? "";
 
   const { client } = await getCurrentClientContext();
@@ -63,6 +91,12 @@ export default async function ClientLeadsPage({
   let allTags: string[] = [];
   let err: string | null = null;
   let totalInSheet = 0;
+  const dateStats: {
+    newest: Date | null;
+    oldest: Date | null;
+    unparsed: number;
+    hasTimeCol: boolean;
+  } = { newest: null, oldest: null, unparsed: 0, hasTimeCol: false };
 
   if (client?.mainsheet_file_id) {
     try {
@@ -85,8 +119,27 @@ export default async function ClientLeadsPage({
         totalInSheet = dataRows.length;
 
         const head = headers.map((h) => h.toLowerCase());
-        const iTime = head.findIndex((h) => h.includes("timestamp") || h === "date");
+        const iTime = head.findIndex(
+          (h) => h.includes("timestamp") || h.includes("date") || h.includes("time"),
+        );
         const iTag = head.findIndex((h) => h.includes("webinar tag") || h.includes("tag"));
+
+        // Stats over all leads: newest/oldest parsed day + how many timestamps
+        // we couldn't read. Drives the diagnostic empty state.
+        if (iTime >= 0) {
+          let unparsed = 0;
+          for (const r of dataRows) {
+            const d = parseLeadDate((r[iTime] ?? "").toString());
+            if (!d) {
+              unparsed++;
+              continue;
+            }
+            if (!dateStats.newest || d > dateStats.newest) dateStats.newest = d;
+            if (!dateStats.oldest || d < dateStats.oldest) dateStats.oldest = d;
+          }
+          dateStats.unparsed = unparsed;
+          dateStats.hasTimeCol = true;
+        }
 
         // Build unique tags list
         if (iTag >= 0) {
@@ -150,7 +203,7 @@ export default async function ClientLeadsPage({
   const buildHref = (next: Partial<{ range: RangeKey; tag: string }>) => {
     const params = new URLSearchParams();
     const r = next.range ?? range;
-    if (r !== "30d") params.set("range", r);
+    if (r !== "all") params.set("range", r);
     const t = next.tag ?? tagFilter;
     if (t) params.set("tag", t);
     const q = params.toString();
@@ -230,7 +283,7 @@ export default async function ClientLeadsPage({
               </Link>
             ) : (
               <form action="/client/leads" className="flex items-center gap-2">
-                {range !== "30d" ? <input type="hidden" name="range" value={range} /> : null}
+                {range !== "all" ? <input type="hidden" name="range" value={range} /> : null}
                 <select
                   name="tag"
                   defaultValue=""
@@ -269,9 +322,31 @@ export default async function ClientLeadsPage({
           {err ? (
             <div className="px-6 py-10 text-center text-sm text-red-400">{err}</div>
           ) : rows.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              No leads in this range
-              {tagFilter ? ` for tag ${tagFilter}` : ""}.
+            <div className="space-y-2 px-6 py-10 text-center text-sm text-zinc-500">
+              <p>
+                No leads in this range
+                {tagFilter ? ` for tag ${tagFilter}` : ""}.
+              </p>
+              {dateStats.newest ? (
+                <p className="font-mono text-[11px] text-zinc-600">
+                  newest lead {fmtDay(dateStats.newest)}
+                  {dateStats.oldest ? ` · oldest ${fmtDay(dateStats.oldest)}` : ""} ·
+                  try a wider range
+                </p>
+              ) : dateStats.hasTimeCol && dateStats.unparsed > 0 ? (
+                <p className="font-mono text-[11px] text-amber-500/80">
+                  couldn&apos;t read {dateStats.unparsed.toLocaleString("en-IN")} lead
+                  dates — showing all is recommended
+                </p>
+              ) : null}
+              {range !== "all" || tagFilter ? (
+                <Link
+                  href="/client/leads"
+                  className="inline-flex h-8 items-center rounded-md border border-zinc-700 px-3 text-[10px] uppercase tracking-widest text-zinc-300 hover:border-orange-500 hover:text-orange-300"
+                >
+                  show all leads
+                </Link>
+              ) : null}
             </div>
           ) : (
             <div className="overflow-x-auto">

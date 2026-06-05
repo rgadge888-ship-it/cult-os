@@ -78,14 +78,9 @@ export async function createClientAction(
     return { error: insertErr?.message ?? "Insert failed." };
   }
 
-  // Seed the deliverables checklist via the helper function we wrote in the migration.
-  const { error: seedErr } = await supabase.rpc("seed_default_deliverables", {
-    p_client_id: inserted.id,
-  });
-  if (seedErr) {
-    // Non-fatal — log but continue. Admin can manually seed later.
-    console.warn("[clients:create] seed_default_deliverables failed:", seedErr.message);
-  }
+  // Deliverables are NOT auto-seeded. Most long-term clients are past launch,
+  // so a 21-item launch checklist is noise. Admins add deliverables manually
+  // (or load the launch template in one click) from the client detail page.
 
   // Record in activity log (client_visible=true so client can see it after we invite them).
   await supabase.from("activity_log").insert({

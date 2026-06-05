@@ -10,6 +10,7 @@ import { InviteForm } from "./invite-form";
 import { NewTaskForm } from "../../tasks/new-task-form";
 import { TaskRow, type TaskRowData } from "../../tasks/task-row";
 import { DeliverableRow } from "./deliverable-row";
+import { DeliverableManage } from "./deliverable-manage";
 import type { Client, Deliverable, WeeklyReport, Task } from "@/lib/db/types";
 
 export default async function ClientDetailPage({
@@ -182,14 +183,13 @@ export default async function ClientDetailPage({
             </div>
           ))}
           {d.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              No deliverables seeded. Something went wrong during client creation.
+            <div className="px-6 pt-8 pb-2 text-center text-sm text-zinc-500">
+              No deliverables. Optional — add them below if this client is in launch
+              phase (landing page, market research, etc.).
             </div>
           ) : null}
+          <DeliverableManage clientId={c.id} isEmpty={d.length === 0} />
         </Panel>
-        <p className="mt-3 text-xs text-zinc-600">
-          Tickable checkbox UI lands in the next slice. For now this view shows the seed.
-        </p>
       </div>
 
       {/* Mainsheet info panel */}

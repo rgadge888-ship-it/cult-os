@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { updateDeliverableStatus } from "./deliverable-actions";
+import { updateDeliverableStatus, deleteDeliverable } from "./deliverable-actions";
 import type { DeliverableStatus } from "@/lib/db/types";
 
 const CYCLE: DeliverableStatus[] = ["not_started", "in_progress", "done", "blocked"];
@@ -35,23 +35,37 @@ export function DeliverableRow({
     const next = CYCLE[(i + 1) % CYCLE.length];
     start(() => updateDeliverableStatus(id, clientId, next));
   };
+  const remove = () => {
+    if (!confirm(`Remove "${name}"?`)) return;
+    start(() => deleteDeliverable(id, clientId));
+  };
   return (
     <li
-      className={`flex items-center justify-between gap-3 text-sm ${
+      className={`group flex items-center justify-between gap-3 text-sm ${
         pending ? "opacity-60" : ""
       }`}
     >
       <span className={status === "done" ? "text-zinc-500 line-through" : "text-zinc-200"}>
         {name}
       </span>
-      <button
-        type="button"
-        onClick={cycle}
-        title="click to advance"
-        className={`inline-flex h-7 items-center justify-center rounded border px-2 font-mono text-[10px] tracking-widest ${STYLE[status]}`}
-      >
-        {LABEL[status]}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={remove}
+          title="remove deliverable"
+          className="font-mono text-[10px] uppercase tracking-widest text-zinc-700 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+        >
+          remove
+        </button>
+        <button
+          type="button"
+          onClick={cycle}
+          title="click to advance"
+          className={`inline-flex h-7 items-center justify-center rounded border px-2 font-mono text-[10px] tracking-widest ${STYLE[status]}`}
+        >
+          {LABEL[status]}
+        </button>
+      </div>
     </li>
   );
 }

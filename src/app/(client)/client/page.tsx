@@ -154,32 +154,35 @@ export default async function ClientDashboardPage() {
         </Suspense>
       </div>
 
-      {/* Deliverables — pure DB, renders immediately */}
-      <div className="mt-10">
-        <SectionHeader
-          label="deliverables"
-          className="mb-3"
-          action={
-            <Link
-              href="/client/deliverables"
-              className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 hover:text-zinc-300"
-            >
-              view →
-            </Link>
-          }
-        />
-        <Panel className="p-5">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-400">What your team has built</span>
-            <span className="font-mono text-zinc-200">
-              {done ?? 0} / {total ?? 0}
-            </span>
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-900">
-            <div className="h-full bg-orange-500" style={{ width: `${pct}%` }} />
-          </div>
-        </Panel>
-      </div>
+      {/* Deliverables — only shown when the team has actually set some up.
+          Long-term clients past launch usually have none, so we hide it. */}
+      {(total ?? 0) > 0 ? (
+        <div className="mt-10">
+          <SectionHeader
+            label="deliverables"
+            className="mb-3"
+            action={
+              <Link
+                href="/client/deliverables"
+                className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 hover:text-zinc-300"
+              >
+                view →
+              </Link>
+            }
+          />
+          <Panel className="p-5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-400">What your team has built</span>
+              <span className="font-mono text-zinc-200">
+                {done ?? 0} / {total ?? 0}
+              </span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-900">
+              <div className="h-full bg-orange-500" style={{ width: `${pct}%` }} />
+            </div>
+          </Panel>
+        </div>
+      ) : null}
     </div>
   );
 }

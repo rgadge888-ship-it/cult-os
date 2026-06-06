@@ -3,6 +3,8 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireUser } from "@/lib/auth/current-user";
 import { extractSheetsFileId, slugify } from "@/lib/sheets/parse-url";
 
 const newClientSchema = z.object({
@@ -27,6 +29,7 @@ export async function createClientAction(
   _prev: NewClientState,
   formData: FormData,
 ): Promise<NewClientState> {
+  const { profile } = await requireUser({ adminOnly: true });
   const raw = Object.fromEntries(formData);
 
   // Default slug from name if not provided.
@@ -76,6 +79,15 @@ export async function createClientAction(
       };
     }
     return { error: insertErr?.message ?? "Insert failed." };
+  }
+
+  // If a regular admin created this client, auto-assign it to them so it shows
+  // up under their (assigned-clients-only) view. Super_admin sees all anyway.
+  // Uses service role because client_admins is super-admin-managed via RLS.
+  if (profile.role === "admin") {
+    await createAdminClient()
+      .from("client_admins")
+      .insert({ client_id: inserted.id, admin_id: profile.id, assigned_by: profile.id });
   }
 
   // Deliverables are NOT auto-seeded. Most long-term clients are past launch,

@@ -11,6 +11,9 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/settings", label: "Settings" },
 ];
 
+// Super-admin-only nav items, inserted before Settings.
+const SUPER_ADMIN_NAV: NavItem[] = [{ href: "/admin/team", label: "Team" }];
+
 const CLIENT_NAV: NavItem[] = [
   { href: "/client", label: "Dashboard" },
   { href: "/client/leads", label: "Leads" },
@@ -30,7 +33,12 @@ export function AppShell({
   children: ReactNode;
 }) {
   const isAdminSide = role === "super_admin" || role === "admin";
-  const nav = isAdminSide ? ADMIN_NAV : CLIENT_NAV;
+  // Insert "Team" (super-admin only) just before Settings.
+  const adminNav =
+    role === "super_admin"
+      ? [...ADMIN_NAV.slice(0, -1), ...SUPER_ADMIN_NAV, ADMIN_NAV[ADMIN_NAV.length - 1]]
+      : ADMIN_NAV;
+  const nav = isAdminSide ? adminNav : CLIENT_NAV;
   const roleLabel =
     role === "super_admin" ? "super admin" : role === "admin" ? "admin" : "client";
 

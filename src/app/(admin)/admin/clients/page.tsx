@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, SectionHeader } from "@/components/ui/section";
-import { StatusPill } from "@/components/ui/status-pill";
 import { can } from "@/lib/auth/permissions";
 import type { Client } from "@/lib/db/types";
 
@@ -69,10 +68,7 @@ export default async function ClientsListPage() {
                 <tr className="border-b border-zinc-900 text-[10px] uppercase tracking-widest text-zinc-500">
                   <th className="px-4 py-3 text-left font-normal">Name</th>
                   <th className="px-4 py-3 text-left font-normal">Niche</th>
-                  <th className="px-4 py-3 text-left font-normal">Plan</th>
-                  <th className="px-4 py-3 text-left font-normal">Status</th>
-                  <th className="px-4 py-3 text-left font-normal">Budget</th>
-                  <th className="px-4 py-3 text-left font-normal">Sheet</th>
+                  <th className="px-4 py-3 text-right font-normal">Sheet</th>
                 </tr>
               </thead>
               <tbody>
@@ -91,18 +87,7 @@ export default async function ClientsListPage() {
                       <div className="font-mono text-[10px] text-zinc-600">{c.slug}</div>
                     </td>
                     <td className="px-4 py-3 text-zinc-400">{c.niche ?? "—"}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-400">
-                      {c.plan === "three_month" ? "3 mo" : "1 mo"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusPill status={c.status} />
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-300">
-                      {c.monthly_ad_budget_inr
-                        ? `₹${Number(c.monthly_ad_budget_inr).toLocaleString("en-IN")}`
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-right">
                       {c.mainsheet_file_id ? (
                         <span className="font-mono text-[10px] uppercase tracking-widest text-emerald-400">
                           linked

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth/current-user";
+import { requireUser, assertCapability } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { TAB_ROLES, type TabMap } from "@/lib/sheets/tabs";
 
@@ -12,7 +12,8 @@ export async function saveTabMap(
   _prev: SaveTabMapState,
   formData: FormData,
 ): Promise<SaveTabMapState> {
-  await requireUser({ adminOnly: true });
+  const { profile } = await requireUser({ adminOnly: true });
+  assertCapability(profile.role, "sheet_setup");
   const supabase = await createClient();
 
   const map: TabMap = {};

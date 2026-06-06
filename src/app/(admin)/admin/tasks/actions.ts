@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { can } from "@/lib/auth/permissions";
 import type { TaskPriority, TaskStatus } from "@/lib/db/types";
 
 export type CreateTaskState = { error?: string; ok?: number };
@@ -11,7 +12,10 @@ export async function createTask(
   _prev: CreateTaskState,
   formData: FormData,
 ): Promise<CreateTaskState> {
-  const { user } = await requireUser({ adminOnly: true });
+  const { user, profile } = await requireUser({ adminOnly: true });
+  if (!can(profile.role, "create_task")) {
+    return { error: "You don't have permission to create tasks." };
+  }
   const supabase = await createClient();
 
   const title = String(formData.get("title") ?? "").trim();

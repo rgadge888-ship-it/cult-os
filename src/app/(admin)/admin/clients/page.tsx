@@ -3,10 +3,12 @@ import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { StatusPill } from "@/components/ui/status-pill";
+import { can } from "@/lib/auth/permissions";
 import type { Client } from "@/lib/db/types";
 
 export default async function ClientsListPage() {
-  await requireUser({ adminOnly: true });
+  const { profile } = await requireUser({ adminOnly: true });
+  const canCreate = can(profile.role, "create_client");
   const supabase = await createClient();
 
   const { data: clients } = await supabase
@@ -33,12 +35,14 @@ export default async function ClientsListPage() {
             every coaching business under Cult Marketers. {rows.length} total.
           </p>
         </div>
-        <Link
-          href="/admin/clients/new"
-          className="inline-flex h-10 items-center rounded-md bg-orange-500 px-4 text-sm font-medium text-zinc-950 hover:bg-orange-400"
-        >
-          + New client
-        </Link>
+        {canCreate ? (
+          <Link
+            href="/admin/clients/new"
+            className="inline-flex h-10 items-center rounded-md bg-orange-500 px-4 text-sm font-medium text-zinc-950 hover:bg-orange-400"
+          >
+            + New client
+          </Link>
+        ) : null}
       </div>
 
       <div className="mt-10">

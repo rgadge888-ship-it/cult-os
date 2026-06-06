@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { NewClientForm } from "./new-client-form";
+import { requireUser } from "@/lib/auth/current-user";
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  await requireUser({ adminOnly: true, capability: "create_client" });
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-10">
       <Link

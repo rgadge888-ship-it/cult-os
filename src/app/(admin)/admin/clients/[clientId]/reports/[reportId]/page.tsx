@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusPill } from "@/components/ui/status-pill";
 import { WeeklyReportView } from "@/components/reports/weekly-report-view";
 import { ReportEditor } from "./report-editor";
+import { can } from "@/lib/auth/permissions";
 import type { WeeklyReport, WeeklyReportData, Client } from "@/lib/db/types";
 
 export default async function ReportViewPage({
@@ -13,7 +14,7 @@ export default async function ReportViewPage({
   params: Promise<{ clientId: string; reportId: string }>;
 }) {
   const { clientId, reportId } = await params;
-  await requireUser({ adminOnly: true });
+  const { profile } = await requireUser({ adminOnly: true });
   const supabase = await createClient();
 
   const [{ data: client }, { data: report }, { data: adminRows }] = await Promise.all([
@@ -22,7 +23,7 @@ export default async function ReportViewPage({
     supabase
       .from("profiles")
       .select("id, full_name, email")
-      .in("role", ["admin", "super_admin"])
+      .in("role", ["super_admin", "strategist", "automation", "copywriter", "admin"])
       .order("email"),
   ]);
 
@@ -75,6 +76,8 @@ export default async function ReportViewPage({
           discussion={r.discussion}
           mom={r.mom}
           admins={admins}
+          canPublish={can(profile.role, "publish_report")}
+          canCreateTasks={can(profile.role, "create_task")}
         />
       </div>
     </div>

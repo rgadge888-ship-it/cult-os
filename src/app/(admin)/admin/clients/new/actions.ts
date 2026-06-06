@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/current-user";
+import { can } from "@/lib/auth/permissions";
 import { extractSheetsFileId, slugify } from "@/lib/sheets/parse-url";
 
 const newClientSchema = z.object({
@@ -30,6 +31,9 @@ export async function createClientAction(
   formData: FormData,
 ): Promise<NewClientState> {
   const { profile } = await requireUser({ adminOnly: true });
+  if (!can(profile.role, "create_client")) {
+    return { error: "You don't have permission to create clients." };
+  }
   const raw = Object.fromEntries(formData);
 
   // Default slug from name if not provided.

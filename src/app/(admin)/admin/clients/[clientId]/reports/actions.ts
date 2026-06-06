@@ -2,10 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth/current-user";
+import { requireUser, assertCapability } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { buildWeeklyReport } from "@/lib/reports/build-weekly";
 import { parseDateRange } from "@/lib/reports/parse";
+import { can } from "@/lib/auth/permissions";
 import type { TaskPriority } from "@/lib/db/types";
 
 export type GenerateState = { error?: string };
@@ -15,7 +16,10 @@ export async function generateWeeklyReport(
   _prev: GenerateState,
   _formData: FormData,
 ): Promise<GenerateState> {
-  const { user } = await requireUser({ adminOnly: true });
+  const { user, profile } = await requireUser({ adminOnly: true });
+  if (!can(profile.role, "generate_report")) {
+    return { error: "You don't have permission to generate reports." };
+  }
   const supabase = await createClient();
 
   const { data: client } = await supabase
@@ -111,7 +115,8 @@ export async function publishReport(
   clientId: string,
   _fd?: FormData,
 ) {
-  const { user } = await requireUser({ adminOnly: true });
+  const { user, profile } = await requireUser({ adminOnly: true });
+  assertCapability(profile.role, "publish_report");
   const supabase = await createClient();
   await supabase
     .from("weekly_reports")
@@ -147,7 +152,10 @@ export async function createTasksFromMom(
   clientId: string,
   tasks: DraftTask[],
 ): Promise<ExtractTasksState> {
-  const { user } = await requireUser({ adminOnly: true });
+  const { user, profile } = await requireUser({ adminOnly: true });
+  if (!can(profile.role, "create_task")) {
+    return { error: "You don't have permission to create tasks." };
+  }
   const supabase = await createClient();
 
   const valid = tasks.filter((t) => t.title.trim().length > 0);
@@ -178,7 +186,8 @@ export async function unpublishReport(
   clientId: string,
   _fd?: FormData,
 ) {
-  const { user } = await requireUser({ adminOnly: true });
+  const { user, profile } = await requireUser({ adminOnly: true });
+  assertCapability(profile.role, "publish_report");
   const supabase = await createClient();
   await supabase
     .from("weekly_reports")

@@ -8,6 +8,8 @@ import {
   type ResetAdminState,
 } from "./actions";
 import { Panel } from "@/components/ui/section";
+import { ROLE_LABEL } from "@/lib/auth/permissions";
+import type { AppRole } from "@/lib/db/types";
 
 const RESET_INITIAL: ResetAdminState = {};
 
@@ -23,6 +25,8 @@ export function AdminCard({
   isSelf: boolean;
 }) {
   const isSuper = admin.role === "super_admin";
+  // Strategist (like super) sees all clients — no per-client assignment.
+  const seesAll = admin.role === "super_admin" || admin.role === "strategist";
   const [assigned, setAssigned] = useState<Set<string>>(new Set(assignedClientIds));
   const [, startTx] = useTransition();
   const reset = resetAdminPassword.bind(null, admin.id);
@@ -53,13 +57,13 @@ export function AdminCard({
             isSuper ? "text-orange-400" : "text-zinc-500"
           }`}
         >
-          {isSuper ? "super admin" : "admin"}
+          {ROLE_LABEL[admin.role as AppRole] ?? admin.role}
         </span>
       </div>
 
-      {isSuper ? (
+      {seesAll ? (
         <p className="text-xs text-zinc-600">
-          Super admin — full access to every client. No assignment needed.
+          {isSuper ? "Super admin" : "Strategist"} — sees every client. No assignment needed.
         </p>
       ) : (
         <div>

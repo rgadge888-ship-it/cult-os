@@ -2,7 +2,13 @@
 // supabase/migrations/0001_init.sql. Replace with auto-generated types once
 // the Supabase CLI is set up (`supabase gen types typescript`).
 
-export type AppRole = "super_admin" | "admin" | "client";
+export type AppRole =
+  | "super_admin"
+  | "strategist"
+  | "automation"
+  | "copywriter"
+  | "admin" // legacy generic admin
+  | "client";
 export type ClientPlan = "one_month" | "three_month";
 export type ClientStatus = "onboarding" | "active" | "paused" | "churned";
 export type DeliverableStatus =

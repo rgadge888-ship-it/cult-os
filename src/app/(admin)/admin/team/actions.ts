@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ASSIGNABLE_ROLES } from "@/lib/auth/permissions";
 
 function genPassword(): string {
   return randomBytes(9).toString("base64url") + "A1!";
@@ -39,6 +40,10 @@ export async function inviteAdmin(
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const fullName = String(formData.get("full_name") ?? "").trim();
+  const roleRaw = String(formData.get("role") ?? "");
+  const role = (ASSIGNABLE_ROLES as string[]).includes(roleRaw)
+    ? (roleRaw as (typeof ASSIGNABLE_ROLES)[number])
+    : "copywriter";
   if (!email || !email.includes("@")) return { error: "Enter a valid email." };
 
   const admin = createAdminClient();
@@ -57,10 +62,10 @@ export async function inviteAdmin(
     return { error: createErr?.message ?? "Failed to create login." };
   }
 
-  // Trigger created a profile (role=client by default). Promote to admin.
+  // Trigger created a profile (role=client by default). Set the chosen role.
   const { error: profErr } = await admin
     .from("profiles")
-    .update({ role: "admin", full_name: fullName || email.split("@")[0] })
+    .update({ role, full_name: fullName || email.split("@")[0] })
     .eq("id", created.user.id);
   if (profErr) return { error: `Created but role update failed: ${profErr.message}` };
 

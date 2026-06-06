@@ -20,6 +20,8 @@ export function ReportEditor({
   discussion,
   mom,
   admins,
+  canPublish = true,
+  canCreateTasks = true,
 }: {
   reportId: string;
   clientId: string;
@@ -28,6 +30,8 @@ export function ReportEditor({
   discussion: string | null;
   mom: string | null;
   admins: { id: string; label: string }[];
+  canPublish?: boolean;
+  canCreateTasks?: boolean;
 }) {
   const save = saveReportText.bind(null, reportId, clientId);
   const [state, action, pending] = useActionState(save, INITIAL);
@@ -63,13 +67,15 @@ export function ReportEditor({
               <label className="block text-[10px] uppercase tracking-widest text-zinc-500">
                 Minutes of Meeting (MOM)
               </label>
-              <button
-                type="button"
-                onClick={openExtract}
-                className="font-mono text-[10px] uppercase tracking-widest text-orange-400 hover:text-orange-300"
-              >
-                extract tasks →
-              </button>
+              {canCreateTasks ? (
+                <button
+                  type="button"
+                  onClick={openExtract}
+                  className="font-mono text-[10px] uppercase tracking-widest text-orange-400 hover:text-orange-300"
+                >
+                  extract tasks →
+                </button>
+              ) : null}
             </div>
             <textarea
               ref={momRef}
@@ -113,10 +119,12 @@ export function ReportEditor({
               : "This report is a draft — the client can't see it yet."}
           </p>
           <p className="text-xs text-zinc-600">
-            Publishing makes the metrics + your notes visible to the client login.
+            {canPublish
+              ? "Publishing makes the metrics + your notes visible to the client login."
+              : "Only a Strategist or Super Admin can publish to the client."}
           </p>
         </div>
-        {status === "published" ? (
+        {!canPublish ? null : status === "published" ? (
           <form action={unpublishReport.bind(null, reportId, clientId)}>
             <button
               type="submit"

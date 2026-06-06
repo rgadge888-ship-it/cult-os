@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { can } from "@/lib/auth/permissions";
 
 export type InviteState = {
   ok?: boolean;
@@ -25,8 +26,8 @@ export async function createClientLogin(
   formData: FormData,
 ): Promise<InviteState> {
   const { profile } = await requireUser({ adminOnly: true });
-  if (profile.role !== "super_admin") {
-    return { error: "Only the super admin can create client logins." };
+  if (!can(profile.role, "manage_client_logins")) {
+    return { error: "You don't have permission to manage client logins." };
   }
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -138,8 +139,8 @@ export async function resetUserPassword(
   _fd: FormData,
 ): Promise<ResetState> {
   const { profile } = await requireUser({ adminOnly: true });
-  if (profile.role !== "super_admin") {
-    return { error: "Only the super admin can reset passwords." };
+  if (!can(profile.role, "manage_client_logins")) {
+    return { error: "You don't have permission to reset passwords." };
   }
 
   const admin = createAdminClient();

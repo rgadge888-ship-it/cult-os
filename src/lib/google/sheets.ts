@@ -25,7 +25,7 @@ async function getDesignatedReaderId(): Promise<string | null> {
     .from("profiles")
     .select("id")
     .in("id", userIds)
-    .in("role", ["admin", "super_admin"]);
+    .in("role", ["super_admin","strategist","automation","copywriter","admin"]);
   const adminSet = new Set((adminRows ?? []).map((r) => r.id));
   const first = tokens.find((t) => t.user_id && adminSet.has(t.user_id));
   return first?.user_id ?? null;

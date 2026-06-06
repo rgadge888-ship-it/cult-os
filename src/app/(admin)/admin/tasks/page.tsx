@@ -38,7 +38,7 @@ export default async function TasksPage({
     supabase
       .from("profiles")
       .select("id, full_name, email")
-      .in("role", ["admin", "super_admin"])
+      .in("role", ["super_admin","strategist","automation","copywriter","admin"])
       .order("email"),
   ]);
 

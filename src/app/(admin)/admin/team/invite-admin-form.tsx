@@ -66,6 +66,20 @@ export function InviteAdminForm() {
             placeholder="Full name (e.g. Kundan)"
             className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
           />
+          <div className="space-y-1.5">
+            <label className="block text-[10px] uppercase tracking-widest text-zinc-500">
+              Role
+            </label>
+            <select
+              name="role"
+              defaultValue="strategist"
+              className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="strategist">Strategist — full client + reporting access</option>
+              <option value="automation">Automation — sheets/tech, no client-facing publish</option>
+              <option value="copywriter">Copywriter — view + write copy + tasks</option>
+            </select>
+          </div>
           {state.error ? <p className="text-xs text-red-400">{state.error}</p> : null}
           <div className="flex items-center gap-2">
             <button

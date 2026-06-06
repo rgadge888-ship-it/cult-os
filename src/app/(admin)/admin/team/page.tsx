@@ -20,7 +20,7 @@ export default async function TeamPage() {
       admin
         .from("profiles")
         .select("id, email, full_name, role")
-        .in("role", ["admin", "super_admin"])
+        .in("role", ["super_admin","strategist","automation","copywriter","admin"])
         .order("role", { ascending: false })
         .order("email"),
       supabase.from("clients").select("id, name").order("name"),

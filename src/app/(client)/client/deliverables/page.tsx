@@ -29,7 +29,7 @@ export default async function ClientDeliverablesPage() {
           ► deliverables
         </p>
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-          What we've built for you
+          What we have built for you
         </h1>
         <p className="text-sm text-zinc-500">
           everything included in your engagement · {done}/{d.length} done

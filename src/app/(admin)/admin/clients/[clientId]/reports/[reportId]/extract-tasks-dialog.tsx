@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createTasksFromMom } from "../actions";
 import type { TaskPriority } from "@/lib/db/types";
 
@@ -22,14 +22,18 @@ function parseLines(mom: string): string[] {
     .filter((l) => l.length >= 4 && l.length <= 300);
 }
 
-export function ExtractTasksDialog({
-  open,
-  onClose,
-  mom,
-  reportId,
-  clientId,
-  admins,
-}: {
+function buildDrafts(mom: string): Draft[] {
+  return parseLines(mom).map((title, i) => ({
+    id: `${i}-${title}`,
+    included: true,
+    title,
+    assignee_id: "",
+    priority: "medium",
+    due_date: "",
+  }));
+}
+
+export function ExtractTasksDialog(props: {
   open: boolean;
   onClose: () => void;
   mom: string;
@@ -37,28 +41,36 @@ export function ExtractTasksDialog({
   clientId: string;
   admins: { id: string; label: string }[];
 }) {
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  if (!props.open) return null;
+
+  return (
+    <ExtractTasksDialogBody
+      key={`${props.reportId}:${props.mom}`}
+      initialDrafts={buildDrafts(props.mom)}
+      {...props}
+    />
+  );
+}
+
+function ExtractTasksDialogBody({
+  open,
+  onClose,
+  reportId,
+  clientId,
+  admins,
+  initialDrafts,
+}: {
+  open: boolean;
+  onClose: () => void;
+  reportId: string;
+  clientId: string;
+  admins: { id: string; label: string }[];
+  initialDrafts: Draft[];
+}) {
+  const [drafts, setDrafts] = useState<Draft[]>(initialDrafts);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
-
-  // Re-parse whenever the dialog opens with new MOM text.
-  useEffect(() => {
-    if (!open) return;
-    const lines = parseLines(mom);
-    setDrafts(
-      lines.map((title, i) => ({
-        id: `${Date.now()}-${i}`,
-        included: true,
-        title,
-        assignee_id: "",
-        priority: "medium",
-        due_date: "",
-      })),
-    );
-    setErr(null);
-    setOkMsg(null);
-  }, [open, mom]);
 
   if (!open) return null;
 

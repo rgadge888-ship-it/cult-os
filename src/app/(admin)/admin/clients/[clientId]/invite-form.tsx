@@ -59,7 +59,7 @@ export function InviteForm({
             </div>
             <p className="mt-2 text-[11px] text-zinc-500">
               Share these with the client. Ask them to change the password after first
-              login. This password won't be shown again.
+              login. This password will not be shown again.
             </p>
           </div>
         ) : (
@@ -159,7 +159,7 @@ function ExistingLoginRow({
             </div>
           </div>
           <p className="mt-1 text-[10px] text-zinc-500">
-            Share via secure channel. Won't be shown again.
+            Share via secure channel. This will not be shown again.
           </p>
         </div>
       ) : state.error ? (

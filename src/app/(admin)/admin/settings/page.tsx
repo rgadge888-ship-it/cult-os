@@ -39,7 +39,7 @@ export default async function SettingsPage({
       ) : null}
       {sp.google_error ? (
         <p className="mt-6 rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
-          Couldn't complete Google connection: <span className="font-mono">{sp.google_error}</span>
+          Could not complete Google connection: <span className="font-mono">{sp.google_error}</span>
         </p>
       ) : null}
 
@@ -80,7 +80,7 @@ export default async function SettingsPage({
         <Panel className="space-y-4 p-5">
           <p className="text-sm text-zinc-400">
             Cult OS needs read-only access to your Google Sheets so it can pull data from
-            client Mainsheets. You'll be sent to Google to approve. We only request the{" "}
+            client Mainsheets. You will be sent to Google to approve. We only request the{" "}
             <span className="font-mono text-zinc-300">spreadsheets.readonly</span> scope —
             Cult OS cannot modify, write to, or delete any sheet.
           </p>

@@ -13,9 +13,11 @@ export type GenerateState = { error?: string };
 
 export async function generateWeeklyReport(
   clientId: string,
-  _prev: GenerateState,
-  _formData: FormData,
+  prev: GenerateState,
+  formData: FormData,
 ): Promise<GenerateState> {
+  void prev;
+  void formData;
   const { user, profile } = await requireUser({ adminOnly: true });
   if (!can(profile.role, "generate_report")) {
     return { error: "You don't have permission to generate reports." };
@@ -92,9 +94,10 @@ export type SaveTextState = { ok?: boolean; error?: string };
 export async function saveReportText(
   reportId: string,
   clientId: string,
-  _prev: SaveTextState,
+  prev: SaveTextState,
   formData: FormData,
 ): Promise<SaveTextState> {
+  void prev;
   await requireUser({ adminOnly: true });
   const supabase = await createClient();
   const { error } = await supabase
@@ -113,8 +116,9 @@ export async function saveReportText(
 export async function publishReport(
   reportId: string,
   clientId: string,
-  _fd?: FormData,
+  formData?: FormData,
 ) {
+  void formData;
   const { user, profile } = await requireUser({ adminOnly: true });
   assertCapability(profile.role, "publish_report");
   const supabase = await createClient();
@@ -168,6 +172,7 @@ export async function createTasksFromMom(
     priority: t.priority,
     due_date: t.due_date || null,
     source: "from_mom" as const,
+    task_type: "client_mom" as const,
     source_report_id: reportId,
     created_by: user.id,
   }));
@@ -184,8 +189,9 @@ export async function createTasksFromMom(
 export async function unpublishReport(
   reportId: string,
   clientId: string,
-  _fd?: FormData,
+  formData?: FormData,
 ) {
+  void formData;
   const { user, profile } = await requireUser({ adminOnly: true });
   assertCapability(profile.role, "publish_report");
   const supabase = await createClient();

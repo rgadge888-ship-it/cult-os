@@ -202,7 +202,7 @@ async function WeekTagLine({
   range: { start: string; end: string };
 }) {
   if (!fileId) return null;
-  let tags: string[] = [];
+  const tags: string[] = [];
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
     const schedTitle = resolveTabTitle("schedule", tabMap, meta.tabs.map((t) => t.title));
@@ -389,7 +389,7 @@ async function CurrentWebinarSection({
   } catch {
     return (
       <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
-        Couldn't read the Mainsheet right now.
+        Could not read the Mainsheet right now.
       </Panel>
     );
   }
@@ -466,38 +466,34 @@ async function CurrentWebinarSection({
   );
 }
 
-async function DailySpendSection({
-  fileId,
-  tabMap,
-}: {
-  fileId: string | null;
-  tabMap: TabMap;
-}) {
+type DailySpendResult =
+  | { kind: "missing_file" }
+  | { kind: "missing_tab" }
+  | { kind: "empty" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; rows: { date: string; spend: number; raw: string }[] };
+
+async function loadDailySpend(
+  fileId: string | null,
+  tabMap: TabMap,
+): Promise<DailySpendResult> {
   if (!fileId) {
-    return (
-      <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
-        Connect your Mainsheet to see daily spend.
-      </Panel>
-    );
+    return { kind: "missing_file" };
   }
 
-  let dailySpend: { date: string; spend: number; raw: string }[] = [];
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
     const dailyTitle = resolveTabTitle("daily", tabMap, meta.tabs.map((t) => t.title));
     const dailyTab = dailyTitle ? meta.tabs.find((t) => t.title === dailyTitle) : null;
     if (!dailyTab) {
-      return (
-        <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
-          No Daily Datasheet tab found.
-        </Panel>
-      );
+      return { kind: "missing_tab" };
     }
     const range = `'${dailyTab.title}'!A:Z`;
     const batch = await getSheetValuesBatchAsAgency(fileId, [range], {
       formatted: true,
     });
     const daily = batch[range] ?? [];
+    let dailySpend: { date: string; spend: number; raw: string }[] = [];
     if (daily.length > 1) {
       const head = daily[0].map((h) => h.toLowerCase());
       const iDate = head.findIndex((h) => h === "date" || h.startsWith("date"));
@@ -528,15 +524,46 @@ async function DailySpendSection({
           .map((r) => ({ date: r.label, spend: r.spend, raw: r.raw }));
       }
     }
+    return dailySpend.length > 0 ? { kind: "ready", rows: dailySpend } : { kind: "empty" };
   } catch {
+    return { kind: "error", message: "Could not read daily spend right now." };
+  }
+}
+
+async function DailySpendSection({
+  fileId,
+  tabMap,
+}: {
+  fileId: string | null;
+  tabMap: TabMap;
+}) {
+  const result = await loadDailySpend(fileId, tabMap);
+
+  if (result.kind === "missing_file") {
     return (
       <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
-        Couldn't read daily spend right now.
+        Connect your Mainsheet to see daily spend.
       </Panel>
     );
   }
 
-  if (dailySpend.length === 0) {
+  if (result.kind === "missing_tab") {
+    return (
+      <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
+        No Daily Datasheet tab found.
+      </Panel>
+    );
+  }
+
+  if (result.kind === "error") {
+    return (
+      <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
+        {result.message}
+      </Panel>
+    );
+  }
+
+  if (result.kind === "empty") {
     return (
       <Panel className="px-6 py-8 text-center text-sm text-zinc-500">
         No daily spend data found yet.
@@ -544,6 +571,7 @@ async function DailySpendSection({
     );
   }
 
+  const dailySpend = result.rows;
   const maxSpend = Math.max(1, ...dailySpend.map((d) => d.spend));
 
   return (
@@ -607,24 +635,35 @@ function MonthlySkeleton() {
   );
 }
 
-async function MonthlyCumulativeSection({
-  fileId,
-  tabMap,
-}: {
-  fileId: string | null;
-  tabMap: TabMap;
-}) {
-  if (!fileId) return null;
+type MonthlyCumulativeResult =
+  | { kind: "missing_file" }
+  | { kind: "missing_tab" }
+  | { kind: "empty" }
+  | { kind: "error"; message: string }
+  | {
+      kind: "ready";
+      latest: string[];
+      indices: {
+        range: number;
+        spend: number;
+        revenue: number;
+        conversions: number;
+        profit: number;
+      };
+    };
+
+async function loadMonthlyCumulative(
+  fileId: string | null,
+  tabMap: TabMap,
+): Promise<MonthlyCumulativeResult> {
+  if (!fileId) return { kind: "missing_file" };
+
   try {
     const meta = await getSheetMetadataAsAgency(fileId);
     const monthlyTitle = resolveTabTitle("monthly", tabMap, meta.tabs.map((t) => t.title));
     const monthlyTab = monthlyTitle ? meta.tabs.find((t) => t.title === monthlyTitle) : null;
     if (!monthlyTab) {
-      return (
-        <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
-          No Monthly Datasheet tab found in your Mainsheet.
-        </Panel>
-      );
+      return { kind: "missing_tab" };
     }
 
     const batch = await getSheetValuesBatchAsAgency(
@@ -634,21 +673,13 @@ async function MonthlyCumulativeSection({
     );
     const rows = batch[`'${monthlyTab.title}'!A:Z`] ?? [];
     if (rows.length < 2) {
-      return (
-        <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
-          No monthly rows yet.
-        </Panel>
-      );
+      return { kind: "empty" };
     }
 
     const head = rows[0].map((h) => h.toLowerCase());
     const data = rows.slice(1).filter((r) => r.some((c) => (c ?? "").trim() !== ""));
     if (data.length === 0) {
-      return (
-        <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
-          No monthly rows yet.
-        </Panel>
-      );
+      return { kind: "empty" };
     }
     const latest = data[data.length - 1];
 
@@ -660,30 +691,77 @@ async function MonthlyCumulativeSection({
     const iConversions = idx("upsells", "converted");
     const iProfit = idx("gross profit", "net profit", "profit");
 
-    const get = (i: number) => (i >= 0 ? (latest[i] ?? "").toString().trim() : "");
-
-    return (
-      <>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Kpi label="Ad Spend" value={get(iSpend)} />
-          <Kpi label="Revenue" value={get(iRevenue)} accent />
-          <Kpi label="Conversions (L1)" value={get(iConversions)} />
-          <Kpi label="Net P/L" value={get(iProfit)} />
-        </div>
-        {iRange >= 0 && get(iRange) ? (
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-zinc-600">
-            {get(iRange)}
-          </p>
-        ) : null}
-      </>
-    );
+    return {
+      kind: "ready",
+      latest,
+      indices: {
+        range: iRange,
+        spend: iSpend,
+        revenue: iRevenue,
+        conversions: iConversions,
+        profit: iProfit,
+      },
+    };
   } catch (e) {
+    return {
+      kind: "error",
+      message: `Could not read monthly data: ${e instanceof Error ? e.message : "error"}`,
+    };
+  }
+}
+
+async function MonthlyCumulativeSection({
+  fileId,
+  tabMap,
+}: {
+  fileId: string | null;
+  tabMap: TabMap;
+}) {
+  const result = await loadMonthlyCumulative(fileId, tabMap);
+  if (result.kind === "missing_file") return null;
+
+  if (result.kind === "missing_tab") {
     return (
-      <Panel className="px-6 py-6 text-center text-sm text-red-400">
-        Couldn't read monthly data: {e instanceof Error ? e.message : "error"}
+      <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
+        No Monthly Datasheet tab found in your Mainsheet.
       </Panel>
     );
   }
+
+  if (result.kind === "empty") {
+    return (
+      <Panel className="px-6 py-6 text-center text-sm text-zinc-500">
+        No monthly rows yet.
+      </Panel>
+    );
+  }
+
+  if (result.kind === "error") {
+    return (
+      <Panel className="px-6 py-6 text-center text-sm text-red-400">
+        {result.message}
+      </Panel>
+    );
+  }
+
+  const get = (i: number) => (i >= 0 ? (result.latest[i] ?? "").toString().trim() : "");
+  const { range, spend, revenue, conversions, profit } = result.indices;
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Kpi label="Ad Spend" value={get(spend)} />
+        <Kpi label="Revenue" value={get(revenue)} accent />
+        <Kpi label="Conversions (L1)" value={get(conversions)} />
+        <Kpi label="Net P/L" value={get(profit)} />
+      </div>
+      {range >= 0 && get(range) ? (
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+          {get(range)}
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 function DailySpendSkeleton() {

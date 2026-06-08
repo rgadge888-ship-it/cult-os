@@ -6,12 +6,13 @@ import { updateProfile, changePassword, type ProfileState } from "./actions";
 const INITIAL: ProfileState = {};
 
 export function FullNameEditor({ initial }: { initial: string | null }) {
-  const [state, action, pending] = useActionState(updateProfile, INITIAL);
   const [editing, setEditing] = useState(false);
-
-  useEffect(() => {
-    if (state.ok) setEditing(false);
-  }, [state.ok]);
+  const action = async (prev: ProfileState, formData: FormData) => {
+    const next = await updateProfile(prev, formData);
+    if (next.ok) setEditing(false);
+    return next;
+  };
+  const [state, formAction, pending] = useActionState(action, INITIAL);
 
   if (!editing) {
     return (
@@ -29,7 +30,7 @@ export function FullNameEditor({ initial }: { initial: string | null }) {
   }
 
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
       <input
         name="full_name"
         defaultValue={initial ?? ""}

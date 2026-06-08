@@ -170,7 +170,11 @@ export async function buildWeeklyReport(
         }))
         .sort((a, b) => b._sort - a._sort)
         .slice(0, 6)
-        .forEach(({ _sort, ...rest }) => topCreatives.push(rest));
+        .forEach((row) => {
+          const { _sort: sortValue, ...rest } = row;
+          void sortValue;
+          topCreatives.push(rest);
+        });
     } catch (e) {
       warnings.push(`Couldn't read Creative tab: ${e instanceof Error ? e.message : "error"}`);
     }

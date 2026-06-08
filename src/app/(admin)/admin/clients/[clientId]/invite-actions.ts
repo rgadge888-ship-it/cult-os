@@ -22,9 +22,10 @@ function genPassword(): string {
 // Create a client-role login for a coaching client. Super-admin only.
 export async function createClientLogin(
   clientId: string,
-  _prev: InviteState,
+  prev: InviteState,
   formData: FormData,
 ): Promise<InviteState> {
+  void prev;
   const { profile } = await requireUser({ adminOnly: true });
   if (!can(profile.role, "manage_client_logins")) {
     return { error: "You don't have permission to manage client logins." };
@@ -135,9 +136,11 @@ export type ResetState = {
 export async function resetUserPassword(
   clientId: string,
   userId: string,
-  _prev: ResetState,
-  _fd: FormData,
+  prev: ResetState,
+  formData: FormData,
 ): Promise<ResetState> {
+  void prev;
+  void formData;
   const { profile } = await requireUser({ adminOnly: true });
   if (!can(profile.role, "manage_client_logins")) {
     return { error: "You don't have permission to reset passwords." };

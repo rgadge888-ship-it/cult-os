@@ -82,7 +82,9 @@ export default async function ClientDetailPage({
     description: t.description,
     status: t.status,
     priority: t.priority,
+    task_type: t.task_type,
     due_date: t.due_date,
+    created_at: t.created_at,
     assignee_id: t.assignee_id,
     client_id: t.client_id,
     client_name: c.name,
@@ -281,13 +283,14 @@ export default async function ClientDetailPage({
               clients={allClients ?? []}
               admins={adminOptions}
               defaultClientId={c.id}
+              defaultTaskType="client_mom"
             />
           }
         />
         <Panel>
           {taskRows.length === 0 ? (
             <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              No tasks for this client yet. Add one above, or extract from a report's MOM.
+              No tasks for this client yet. Add one above, or extract from a report MOM.
             </div>
           ) : (
             <ul>

@@ -95,7 +95,7 @@ export default async function AdminDashboardPage() {
   }
 
   const activeClients = allClients.filter((c) => c.status !== "churned");
-  const now = Date.now();
+  const now = new Date().getTime();
 
   let cumSpendCurr = 0;
   let cumRevenueCurr = 0;

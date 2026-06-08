@@ -73,8 +73,8 @@ export async function MainsheetPreview({
         <SectionHeader label="mainsheet preview" className="mb-3" />
         <Panel className="space-y-3 px-5 py-6 text-sm text-zinc-400">
           <p>
-            Google Sheets isn't connected yet. Once you connect, Cult OS can read this
-            Mainsheet's tabs and columns.
+            Google Sheets is not connected yet. Once you connect, Cult OS can read this
+            Mainsheet tabs and columns.
           </p>
           <a
             href="/admin/settings"

@@ -4,9 +4,15 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/auth/permissions";
-import type { TaskPriority, TaskStatus } from "@/lib/db/types";
+import type { TaskPriority, TaskStatus, TaskType } from "@/lib/db/types";
 
 export type CreateTaskState = { error?: string; ok?: number };
+
+function toCreatedAt(value: string): string | undefined {
+  if (!value) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  return new Date(`${value}T00:00:00`).toISOString();
+}
 
 export async function createTask(
   _prev: CreateTaskState,
@@ -26,6 +32,10 @@ export async function createTask(
   const assignee_id =
     (String(formData.get("assignee_id") ?? "") || null) as string | null;
   const priority = (String(formData.get("priority") ?? "medium") as TaskPriority);
+  const taskTypeRaw = String(formData.get("task_type") ?? "weekly");
+  const task_type: TaskType = taskTypeRaw === "client_mom" ? "client_mom" : "weekly";
+  const addedDate = String(formData.get("added_date") ?? "").trim();
+  const created_at = toCreatedAt(addedDate);
   const due_date = (String(formData.get("due_date") ?? "") || null) as string | null;
 
   const { error } = await supabase.from("tasks").insert({
@@ -37,6 +47,8 @@ export async function createTask(
     due_date,
     created_by: user.id,
     source: "manual",
+    task_type,
+    ...(created_at ? { created_at } : {}),
   });
   if (error) return { error: error.message };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { createClientAction, type NewClientState } from "./actions";
 import { slugify } from "@/lib/sheets/parse-url";
 
@@ -124,12 +125,12 @@ export function NewClientForm() {
         >
           {pending ? "Creating…" : "Create client"}
         </button>
-        <a
+        <Link
           href="/admin/clients"
           className="text-xs uppercase tracking-widest text-zinc-500 hover:text-zinc-300"
         >
           Cancel
-        </a>
+        </Link>
       </div>
     </form>
   );

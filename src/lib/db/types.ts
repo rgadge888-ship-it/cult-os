@@ -21,6 +21,7 @@ export type ReportStatus = "draft" | "published";
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type TaskSource = "manual" | "from_mom";
+export type TaskType = "weekly" | "client_mom";
 
 export type Task = {
   id: string;
@@ -30,6 +31,7 @@ export type Task = {
   assignee_id: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  task_type: TaskType;
   due_date: string | null;
   source: TaskSource;
   source_report_id: string | null;

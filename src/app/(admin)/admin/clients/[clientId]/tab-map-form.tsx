@@ -23,7 +23,7 @@ export function TabMapForm({
   return (
     <form action={formAction} className="space-y-4 p-5">
       <p className="text-sm text-zinc-400">
-        Map each Cult OS section to the matching tab in this client's Mainsheet.
+        Map each Cult OS section to the matching tab in this client Mainsheet.
         Tab names differ per client — pick the right one once and every page +
         report will read from it. Blank = let Cult OS auto-detect.
       </p>

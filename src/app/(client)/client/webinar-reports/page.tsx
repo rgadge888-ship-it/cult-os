@@ -106,7 +106,7 @@ export default async function ClientWebinarReportsPage() {
           Webinar Reports
         </h1>
         <p className="text-sm text-zinc-500">
-          every session you've run, with the funnel inside the call
+          every session you have run, with the funnel inside the call
         </p>
       </div>
 

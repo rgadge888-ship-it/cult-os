@@ -3,7 +3,6 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/current-user";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ASSIGNABLE_ROLES } from "@/lib/auth/permissions";
 
@@ -28,9 +27,10 @@ export type InviteAdminState = {
 
 // Create a new admin (team member) login.
 export async function inviteAdmin(
-  _prev: InviteAdminState,
+  prev: InviteAdminState,
   formData: FormData,
 ): Promise<InviteAdminState> {
+  void prev;
   let actor;
   try {
     actor = await ensureSuperAdmin();
@@ -116,9 +116,11 @@ export type ResetAdminState = {
 
 export async function resetAdminPassword(
   adminId: string,
-  _prev: ResetAdminState,
-  _fd: FormData,
+  prev: ResetAdminState,
+  formData: FormData,
 ): Promise<ResetAdminState> {
+  void prev;
+  void formData;
   try {
     await ensureSuperAdmin();
   } catch (e) {

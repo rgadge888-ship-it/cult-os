@@ -80,7 +80,6 @@ export default async function WebinarDetailPage({
   const iDate = c("webinar date", "date");
   const iReg = c("registration");
   const iAtt = c("max attedee", "max attendee", "attendees");
-  const iAttPct = headers.findIndex((h) => /attendees\s*[%(]/i.test(h));
   const iS50Count = headers.findIndex((h) => /^stayed till 50%$/i.test(h.trim()));
   const iS50Pct = c("stayed till 50%(percentage)", "stayed till 50% (percentage)");
   const iSPCount = headers.findIndex((h) => /stayed till pitch start/i.test(h));

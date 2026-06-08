@@ -2,15 +2,9 @@
 
 import { useTransition } from "react";
 import { updateTaskStatus, updateTaskField } from "./actions";
-import type { TaskStatus, TaskPriority } from "@/lib/db/types";
+import { TASK_STATUS_OPTIONS, TASK_TYPE_LABEL } from "@/lib/tasks";
+import type { TaskPriority, TaskStatus, TaskType } from "@/lib/db/types";
 
-const STATUS_CYCLE: TaskStatus[] = ["todo", "in_progress", "blocked", "done"];
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: "TODO",
-  in_progress: "DOING",
-  blocked: "BLOCKED",
-  done: "DONE",
-};
 const STATUS_COLOR: Record<TaskStatus, string> = {
   todo: "border-zinc-700 text-zinc-300",
   in_progress: "border-orange-500/60 text-orange-300 bg-orange-950/30",
@@ -30,7 +24,9 @@ export type TaskRowData = {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  task_type: TaskType;
   due_date: string | null;
+  created_at: string;
   assignee_id: string | null;
   client_id: string | null;
   client_name: string | null;
@@ -45,12 +41,6 @@ export function TaskRow({
   admins: { id: string; label: string }[];
 }) {
   const [pending, start] = useTransition();
-
-  const cycleStatus = () => {
-    const i = STATUS_CYCLE.indexOf(task.status);
-    const next = STATUS_CYCLE[(i + 1) % STATUS_CYCLE.length];
-    start(() => updateTaskStatus(task.id, next));
-  };
 
   const dueClass = (() => {
     if (!task.due_date) return "text-zinc-600";
@@ -70,22 +60,31 @@ export function TaskRow({
         pending ? "opacity-60" : ""
       }`}
     >
-      <button
-        type="button"
-        onClick={cycleStatus}
-        className={`col-span-2 inline-flex h-7 items-center justify-center rounded border px-2 font-mono text-[10px] tracking-widest ${
+      <select
+        value={task.status}
+        onChange={(e) => start(() => updateTaskStatus(task.id, e.target.value as TaskStatus))}
+        className={`col-span-2 h-8 rounded border bg-zinc-950 px-2 font-mono text-[10px] uppercase tracking-widest focus:border-orange-500 focus:outline-none ${
           STATUS_COLOR[task.status]
         }`}
-        title="click to advance status"
       >
-        {STATUS_LABEL[task.status]}
-      </button>
+        {TASK_STATUS_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
 
-      <div className="col-span-5 min-w-0">
+      <div className="col-span-3 min-w-0">
         <p className="truncate text-sm text-zinc-100">{task.title}</p>
         {task.description ? (
           <p className="truncate text-xs text-zinc-500">{task.description}</p>
         ) : null}
+      </div>
+
+      <div className="col-span-1">
+        <span className="rounded border border-zinc-800 px-1.5 py-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+          {TASK_TYPE_LABEL[task.task_type]}
+        </span>
       </div>
 
       <div className="col-span-2 truncate font-mono text-xs text-zinc-400">
@@ -109,18 +108,26 @@ export function TaskRow({
         ))}
       </select>
 
-      <div
-        className={`col-span-1 text-right font-mono text-xs ${dueClass}`}
-        title={task.due_date ?? ""}
-      >
-        {task.due_date ? formatDue(task.due_date) : "—"}{" "}
-        <span className={`ml-1 ${PRIORITY_COLOR[task.priority]}`}>•</span>
+      <div className="col-span-2 grid grid-cols-2 gap-2 text-right font-mono text-[11px]">
+        <div className="text-zinc-500" title={task.created_at}>
+          <span className="block text-[9px] uppercase tracking-widest text-zinc-700">
+            Added
+          </span>
+          {formatDate(task.created_at)}
+        </div>
+        <div className={dueClass} title={task.due_date ?? ""}>
+          <span className="block text-[9px] uppercase tracking-widest text-zinc-700">
+            Due
+          </span>
+          {task.due_date ? formatDate(task.due_date) : "—"}{" "}
+          <span className={`ml-1 ${PRIORITY_COLOR[task.priority]}`}>•</span>
+        </div>
       </div>
     </li>
   );
 }
 
-function formatDue(iso: string): string {
+function formatDate(iso: string): string {
   const d = new Date(iso);
   const m = d.toLocaleString("en-IN", { month: "short" });
   return `${m} ${d.getDate()}`;

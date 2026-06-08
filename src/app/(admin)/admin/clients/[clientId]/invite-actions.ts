@@ -121,6 +121,7 @@ export async function createClientLogin(
   });
 
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/login`);
   return { ok: true, email, tempPassword };
 }
 
@@ -173,5 +174,6 @@ export async function resetUserPassword(
   });
 
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/login`);
   return { ok: true, email: target.user.email ?? "", tempPassword };
 }

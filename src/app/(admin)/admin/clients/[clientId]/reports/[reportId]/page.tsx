@@ -40,10 +40,10 @@ export default async function ReportViewPage({
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <Link
-        href={`/admin/clients/${clientId}`}
+        href={`/admin/clients/${clientId}/reports`}
         className="text-[10px] uppercase tracking-widest text-zinc-500 hover:text-zinc-300"
       >
-        ← {c.name}
+        ← Reports · {c.name}
       </Link>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

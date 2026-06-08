@@ -34,6 +34,7 @@ export async function updateDeliverableStatus(
   });
 
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/deliverables`);
   revalidatePath("/client/deliverables");
   revalidatePath("/client");
 }
@@ -72,6 +73,7 @@ export async function addDeliverable(
   if (error) return { error: error.message };
 
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/deliverables`);
   revalidatePath("/client/deliverables");
   revalidatePath("/client");
   return { ok: true };
@@ -83,6 +85,7 @@ export async function deleteDeliverable(deliverableId: string, clientId: string)
   const supabase = await createClient();
   await supabase.from("deliverables").delete().eq("id", deliverableId);
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/deliverables`);
   revalidatePath("/client/deliverables");
   revalidatePath("/client");
 }
@@ -98,6 +101,7 @@ export async function loadLaunchChecklist(clientId: string) {
   });
   if (error) return { error: error.message };
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/deliverables`);
   revalidatePath("/client/deliverables");
   revalidatePath("/client");
   return { ok: true };

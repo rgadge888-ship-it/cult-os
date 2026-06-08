@@ -53,23 +53,27 @@ export async function createTask(
   if (error) return { error: error.message };
 
   revalidatePath("/admin/tasks");
-  if (client_id) revalidatePath(`/admin/clients/${client_id}`);
+  if (client_id) {
+    revalidatePath(`/admin/clients/${client_id}`);
+    revalidatePath(`/admin/clients/${client_id}/tasks`);
+  }
   return { ok: Date.now() };
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   const { user } = await requireUser({ adminOnly: true });
   const supabase = await createClient();
-  await supabase
+  const { data: task } = await supabase
     .from("tasks")
     .update({
       status,
       completed_at: status === "done" ? new Date().toISOString() : null,
       completed_by: status === "done" ? user.id : null,
     })
-    .eq("id", taskId);
-  revalidatePath("/admin/tasks");
-  revalidatePath("/admin/clients", "layout");
+    .eq("id", taskId)
+    .select("client_id")
+    .single();
+  revalidateTaskPaths(task?.client_id ?? null);
 }
 
 export async function updateTaskField(
@@ -78,9 +82,13 @@ export async function updateTaskField(
 ) {
   await requireUser({ adminOnly: true });
   const supabase = await createClient();
-  await supabase.from("tasks").update(patch).eq("id", taskId);
-  revalidatePath("/admin/tasks");
-  revalidatePath("/admin/clients", "layout");
+  const { data: task } = await supabase
+    .from("tasks")
+    .update(patch)
+    .eq("id", taskId)
+    .select("client_id")
+    .single();
+  revalidateTaskPaths(task?.client_id ?? null);
 }
 
 export async function deleteTask(taskId: string) {
@@ -89,6 +97,19 @@ export async function deleteTask(taskId: string) {
     throw new Error("Only the super admin can delete tasks.");
   }
   const supabase = await createClient();
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("client_id")
+    .eq("id", taskId)
+    .single();
   await supabase.from("tasks").delete().eq("id", taskId);
+  revalidateTaskPaths(task?.client_id ?? null);
+}
+
+function revalidateTaskPaths(clientId: string | null) {
   revalidatePath("/admin/tasks");
+  if (clientId) {
+    revalidatePath(`/admin/clients/${clientId}`);
+    revalidatePath(`/admin/clients/${clientId}/tasks`);
+  }
 }

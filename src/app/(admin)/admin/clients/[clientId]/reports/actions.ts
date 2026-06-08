@@ -85,6 +85,8 @@ export async function generateWeeklyReport(
     client_visible: false,
   });
 
+  revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/reports`);
   redirect(`/admin/clients/${clientId}/reports/${report.id}`);
 }
 
@@ -110,6 +112,7 @@ export async function saveReportText(
     .eq("id", reportId);
   if (error) return { error: error.message };
   revalidatePath(`/admin/clients/${clientId}/reports/${reportId}`);
+  revalidatePath(`/admin/clients/${clientId}/reports`);
   return { ok: true };
 }
 
@@ -139,6 +142,8 @@ export async function publishReport(
     client_visible: true,
   });
   revalidatePath(`/admin/clients/${clientId}/reports/${reportId}`);
+  revalidatePath(`/admin/clients/${clientId}/reports`);
+  revalidatePath(`/admin/clients/${clientId}`);
 }
 
 export type ExtractTasksState = { ok?: number; error?: string; count?: number };
@@ -182,6 +187,7 @@ export async function createTasksFromMom(
 
   revalidatePath("/admin/tasks");
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/tasks`);
   revalidatePath(`/admin/clients/${clientId}/reports/${reportId}`);
   return { ok: Date.now(), count: rows.length };
 }
@@ -208,4 +214,6 @@ export async function unpublishReport(
     client_visible: false,
   });
   revalidatePath(`/admin/clients/${clientId}/reports/${reportId}`);
+  revalidatePath(`/admin/clients/${clientId}/reports`);
+  revalidatePath(`/admin/clients/${clientId}`);
 }

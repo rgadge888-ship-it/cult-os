@@ -29,5 +29,6 @@ export async function saveTabMap(
   if (error) return { error: error.message };
 
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${clientId}/data`);
   return { ok: true };
 }

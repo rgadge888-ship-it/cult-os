@@ -72,6 +72,16 @@ export type Client = {
   updated_at: string;
 };
 
+export type ClientKpiWidget = {
+  id: string;
+  client_id: string;
+  kpi_label: string;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Deliverable = {
   id: string;
   client_id: string;

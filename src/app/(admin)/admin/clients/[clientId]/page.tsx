@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { StatusPill } from "@/components/ui/status-pill";
+import { AddKpiWidgetControl, RemoveKpiWidgetButton } from "./kpi-widget-controls";
 import {
   loadDailyDataSheet,
   matchDailyDataColumns,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/sheets/daily-data";
 import { loadFoundationSheet, type FoundationKpi, type FoundationSheet } from "@/lib/sheets/foundation";
 import { parseNumber } from "@/lib/reports/parse";
-import type { Client, WeeklyReport } from "@/lib/db/types";
+import type { Client, ClientKpiWidget, WeeklyReport } from "@/lib/db/types";
 
 type TrendPoint = {
   label: string;
@@ -32,6 +33,7 @@ export default async function ClientOverviewPage({
     { data: latestReport },
     { count: openTasks },
     { count: allTasks },
+    { data: kpiWidgets },
   ] = await Promise.all([
     supabase.from("clients").select("*").eq("id", clientId).single(),
     supabase
@@ -50,6 +52,12 @@ export default async function ClientOverviewPage({
       .from("tasks")
       .select("*", { count: "exact", head: true })
       .eq("client_id", clientId),
+    supabase
+      .from("client_kpi_widgets")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
   ]);
 
   if (!client) notFound();
@@ -86,13 +94,16 @@ export default async function ClientOverviewPage({
   }
 
   const summary = columns ? summarizeDailyRows(monthRows, columns) : null;
+  const selectedWidgets = (kpiWidgets ?? []) as ClientKpiWidget[];
   const alertItems = buildAlertItems({
     columns,
     foundation,
     headers: dailyHeaders,
     rows: monthRows,
+    selectedWidgets,
     summary,
   });
+  const selectedLabels = new Set(selectedWidgets.map((widget) => widget.kpi_label));
 
   return (
     <div className="space-y-10">
@@ -140,24 +151,30 @@ export default async function ClientOverviewPage({
 
       <section>
         <SectionHeader
-          label="red alert"
+          label="kpi widgets"
           className="mb-3"
           action={
-            foundation?.tabTitle ? (
-              <span className="font-mono text-[10px] uppercase tracking-widest text-red-300">
-                {foundation.tabTitle}
-              </span>
-            ) : null
+            foundation?.targets.length ? (
+              <AddKpiWidgetControl
+                clientId={clientId}
+                targets={foundation.targets}
+                selectedLabels={selectedLabels}
+              />
+            ) : foundation?.tabTitle ? (
+                <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                  No KPIs in {foundation.tabTitle}
+                </span>
+              ) : null
           }
         />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {alertItems.length > 0 ? (
             alertItems.map((item) => (
-              <AlertCard key={item.key} item={item} />
+              <AlertCard key={item.key} clientId={clientId} item={item} />
             ))
           ) : (
             <Panel className="p-5 text-sm text-zinc-500 md:col-span-2 xl:col-span-3">
-              Add KPI and Goal columns in the Foundation Sheet to show alerts here.
+              Add KPI and Goal columns in the Foundation Sheet, then use the plus control to add widgets here.
             </Panel>
           )}
         </div>
@@ -246,6 +263,7 @@ type AlertItem = {
   prefix: string;
   suffix: string;
   source: string;
+  widget: ClientKpiWidget;
 };
 
 function buildAlertItems({
@@ -253,30 +271,36 @@ function buildAlertItems({
   foundation,
   headers,
   rows,
+  selectedWidgets,
   summary,
 }: {
   columns: DailyDataColumns | null;
   foundation: FoundationSheet | null;
   headers: string[];
   rows: DailyDataRow[];
+  selectedWidgets: ClientKpiWidget[];
   summary: ReturnType<typeof summarizeDailyRows> | null;
 }): AlertItem[] {
-  return (
-    foundation?.targets.map((target) => {
-      const format = inferAlertFormat(target.label);
-      const current = currentForKpi({ columns, headers, rows, summary, target });
-      return {
-        key: `kpi-${target.label}`,
-        label: target.label,
-        current,
-        target,
-        lowerIsBetter: format.lowerIsBetter,
-        prefix: format.prefix,
-        suffix: format.suffix,
-        source: current == null ? "No matching Daily Data column" : "Matched from Daily Data",
-      };
-    }) ?? []
-  );
+  if (!foundation) return [];
+  const targetByLabel = new Map(foundation.targets.map((target) => [target.label, target]));
+
+  return selectedWidgets.flatMap((widget) => {
+    const target = targetByLabel.get(widget.kpi_label);
+    if (!target) return [];
+    const format = inferAlertFormat(target.label);
+    const current = currentForKpi({ columns, headers, rows, summary, target });
+    return [{
+      key: widget.id,
+      label: target.label,
+      current,
+      target,
+      lowerIsBetter: format.lowerIsBetter,
+      prefix: format.prefix,
+      suffix: format.suffix,
+      source: current == null ? "No matching Daily Data column" : "Matched from Daily Data",
+      widget,
+    }];
+  });
 }
 
 function currentForKpi({
@@ -359,7 +383,7 @@ function inferAlertFormat(label: string): {
   };
 }
 
-function AlertCard({ item }: { item: AlertItem }) {
+function AlertCard({ clientId, item }: { clientId: string; item: AlertItem }) {
   const currentValue = item.current;
   const targetValue = item.target?.target ?? null;
   const hasData = currentValue != null && targetValue != null;
@@ -391,17 +415,20 @@ function AlertCard({ item }: { item: AlertItem }) {
               : `${item.prefix}${formatCompact(item.current)}${item.suffix}`}
           </p>
         </div>
-        <span
-          className={`rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
-            isAlert
-              ? "border-red-500/40 bg-red-500/10 text-red-300"
-              : hasData
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-zinc-800 text-zinc-500"
-          }`}
-        >
-          {isAlert ? "Alert" : hasData ? "On track" : "Waiting"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
+              isAlert
+                ? "border-red-500/40 bg-red-500/10 text-red-300"
+                : hasData
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                  : "border-zinc-800 text-zinc-500"
+            }`}
+          >
+            {isAlert ? "Alert" : hasData ? "On track" : "Waiting"}
+          </span>
+          <RemoveKpiWidgetButton clientId={clientId} widget={item.widget} />
+        </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-zinc-900 pt-3">
         <div>

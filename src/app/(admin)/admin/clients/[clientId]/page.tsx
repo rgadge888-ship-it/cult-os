@@ -1,9 +1,25 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSheetMetadataAsAgency, getSheetValuesAsAgency } from "@/lib/google/sheets";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { StatusPill } from "@/components/ui/status-pill";
-import type { Client, Deliverable, WeeklyReport } from "@/lib/db/types";
+import {
+  findHeaderIdx,
+  loadDailyDataSheet,
+  matchDailyDataColumns,
+  summarizeDailyRows,
+  type DailyDataColumns,
+  type DailyDataRow,
+} from "@/lib/sheets/daily-data";
+import { resolveTabTitle } from "@/lib/sheets/tabs";
+import { parseNumber } from "@/lib/reports/parse";
+import type { Client, WeeklyReport } from "@/lib/db/types";
+
+type TrendPoint = {
+  label: string;
+  value: number;
+};
 
 export default async function ClientOverviewPage({
   params,
@@ -15,13 +31,11 @@ export default async function ClientOverviewPage({
 
   const [
     { data: client },
-    { data: deliverables },
     { data: latestReport },
     { count: openTasks },
-    { count: loginCount },
+    { count: allTasks },
   ] = await Promise.all([
     supabase.from("clients").select("*").eq("id", clientId).single(),
-    supabase.from("deliverables").select("*").eq("client_id", clientId),
     supabase
       .from("weekly_reports")
       .select("id, week_start_date, week_end_date, status, generated_at")
@@ -35,48 +49,88 @@ export default async function ClientOverviewPage({
       .eq("client_id", clientId)
       .neq("status", "done"),
     supabase
-      .from("profiles")
+      .from("tasks")
       .select("*", { count: "exact", head: true })
-      .eq("client_id", clientId)
-      .eq("role", "client"),
+      .eq("client_id", clientId),
   ]);
 
   if (!client) notFound();
 
   const c = client as Client;
-  const d = (deliverables ?? []) as Deliverable[];
   const report = latestReport as
     | Pick<WeeklyReport, "id" | "week_start_date" | "week_end_date" | "status" | "generated_at">
     | null;
-  const doneCount = d.filter((row) => row.status === "done").length;
-  const totalCount = d.length;
-  const deliverablePct = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+
+  let monthRows: DailyDataRow[] = [];
+  let columns: DailyDataColumns | null = null;
+  let sheetError: string | null = null;
+  let cpaTrend: TrendPoint[] = [];
+  let ctrTrend: TrendPoint[] = [];
+  let dailyTabTitle: string | null = null;
+
+  if (c.mainsheet_file_id) {
+    try {
+      const daily = await loadDailyDataSheet(c.mainsheet_file_id, c.tab_map);
+      dailyTabTitle = daily.tabTitle;
+      columns = matchDailyDataColumns(daily.headers);
+      monthRows = filterCurrentMonth(daily.parsedRows);
+      cpaTrend = buildCostTrend(monthRows, columns);
+      ctrTrend = buildColumnTrend(monthRows, columns.ctr);
+    } catch (e) {
+      sheetError = e instanceof Error ? e.message : "Failed to read the Daily Data tab.";
+    }
+  } else {
+    sheetError = "No Mainsheet is linked for this client.";
+  }
+
+  const summary = columns ? summarizeDailyRows(monthRows, columns) : null;
+  const osValue = c.mainsheet_file_id
+    ? await readMonthlyOs(c.mainsheet_file_id, c.tab_map).catch(() => null)
+    : null;
 
   return (
     <div className="space-y-10">
       <section>
-        <SectionHeader label="overview" className="mb-3" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <SectionHeader
+          label="month snapshot"
+          className="mb-3"
+          action={
+            dailyTabTitle ? (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-emerald-400">
+                {dailyTabTitle}
+              </span>
+            ) : null
+          }
+        />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <Card label="Ad spend" value={formatInr(summary?.totalSpend ?? null)} />
+          <Card label="Revenue" value={formatInr(summary?.totalRevenue ?? null)} accent />
+          <Card label={columns?.costLabel ?? "CPL"} value={formatInr(summary?.costPerResult ?? null)} />
+          <Card label="OS" value={osValue ?? "—"} hint="from Monthly Data" />
           <Card
-            label="Monthly budget"
-            value={
-              c.monthly_ad_budget_inr
-                ? `₹${Number(c.monthly_ad_budget_inr).toLocaleString("en-IN")}`
-                : "—"
-            }
-          />
-          <Card
-            label="Deliverables"
-            value={`${doneCount}/${totalCount}`}
-            hint={`${deliverablePct}% complete`}
-          />
-          <Card label="Open tasks" value={String(openTasks ?? 0)} />
-          <Card
-            label="Mainsheet"
-            value={c.mainsheet_file_id ? "linked" : "not linked"}
-            valueClass={c.mainsheet_file_id ? "text-emerald-400" : "text-zinc-500"}
+            label="Open tasks"
+            value={String(openTasks ?? 0)}
+            hint={`${allTasks ?? 0} total client tasks`}
           />
         </div>
+        {sheetError ? (
+          <p className="mt-3 text-sm text-red-400">{sheetError}</p>
+        ) : null}
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <TrendPanel
+          label={`${columns?.costLabel ?? "CPL"} trend`}
+          title={`${columns?.costLabel ?? "CPL"} this month`}
+          points={cpaTrend}
+          valuePrefix="₹"
+        />
+        <TrendPanel
+          label="ctr trend"
+          title="CTR this month"
+          points={ctrTrend}
+          valueSuffix="%"
+        />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -107,17 +161,153 @@ export default async function ClientOverviewPage({
         </div>
 
         <div>
-          <SectionHeader label="account health" className="mb-3" />
+          <SectionHeader label="sheet health" className="mb-3" />
           <Panel className="space-y-3 p-5 text-sm">
-            <Row label="Client login" value={(loginCount ?? 0) > 0 ? "created" : "not created"} />
-            <Row label="Start date" value={c.start_date ?? "—"} />
+            <Row label="Mainsheet" value={c.mainsheet_file_id ? "linked" : "not linked"} />
             <Row
               label="Sheets connected"
               value={c.sheets_connected_at ? new Date(c.sheets_connected_at).toLocaleString() : "—"}
             />
+            <Row label="Rows this month" value={String(monthRows.length)} />
           </Panel>
         </div>
       </section>
+    </div>
+  );
+}
+
+function filterCurrentMonth(rows: DailyDataRow[]): DailyDataRow[] {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
+  const end = now.toISOString().slice(0, 10);
+  return rows
+    .filter((row) => row.iso >= start && row.iso <= end)
+    .sort((a, b) => a.iso.localeCompare(b.iso));
+}
+
+function buildCostTrend(rows: DailyDataRow[], columns: DailyDataColumns): TrendPoint[] {
+  return rows
+    .map((row) => {
+      const direct =
+        columns.costPerResult >= 0 ? parseNumber(row.row[columns.costPerResult]) : null;
+      const spend = columns.spend >= 0 ? parseNumber(row.row[columns.spend]) : null;
+      const results = columns.results >= 0 ? parseNumber(row.row[columns.results]) : null;
+      const computed = spend != null && results != null && results > 0 ? spend / results : null;
+      const value = direct ?? computed;
+      return value != null ? { label: row.label, value } : null;
+    })
+    .filter(Boolean) as TrendPoint[];
+}
+
+function buildColumnTrend(rows: DailyDataRow[], column: number): TrendPoint[] {
+  if (column < 0) return [];
+  return rows
+    .map((row) => {
+      const value = parseNumber(row.row[column]);
+      return value != null ? { label: row.label, value } : null;
+    })
+    .filter(Boolean) as TrendPoint[];
+}
+
+async function readMonthlyOs(fileId: string, tabMap: Client["tab_map"]): Promise<string | null> {
+  const meta = await getSheetMetadataAsAgency(fileId);
+  const monthlyTitle = resolveTabTitle("monthly", tabMap, meta.tabs.map((t) => t.title));
+  const monthlyTab = monthlyTitle ? meta.tabs.find((t) => t.title === monthlyTitle) : null;
+  if (!monthlyTab) return null;
+
+  const rows = await getSheetValuesAsAgency(fileId, `'${monthlyTab.title}'!A:Z`, {
+    formatted: true,
+  });
+  const hIdx = findHeaderIdx(rows);
+  const headers = (rows[hIdx] ?? []).map((h) => h.trim().toLowerCase());
+  const osIdx = headers.findIndex(
+    (h) =>
+      h === "os" ||
+      h.includes("overall score") ||
+      h.includes("overall status") ||
+      h.includes("overall summary"),
+  );
+  if (osIdx < 0) return null;
+  const dataRows = rows.slice(hIdx + 1).filter((r) => r.some((c) => (c ?? "").trim() !== ""));
+  const latest = dataRows[dataRows.length - 1];
+  return latest ? (latest[osIdx] ?? "").toString().trim() || null : null;
+}
+
+function TrendPanel({
+  label,
+  title,
+  points,
+  valuePrefix = "",
+  valueSuffix = "",
+}: {
+  label: string;
+  title: string;
+  points: TrendPoint[];
+  valuePrefix?: string;
+  valueSuffix?: string;
+}) {
+  const latest = points[points.length - 1]?.value ?? null;
+  return (
+    <div>
+      <SectionHeader label={label} className="mb-3" />
+      <Panel className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-zinc-100">{title}</p>
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+              {points.length} daily points
+            </p>
+          </div>
+          <p className="font-mono text-lg text-orange-300">
+            {latest == null ? "—" : `${valuePrefix}${formatCompact(latest)}${valueSuffix}`}
+          </p>
+        </div>
+        <div className="mt-5">
+          {points.length >= 2 ? (
+            <Sparkline points={points} />
+          ) : (
+            <div className="flex h-32 items-center justify-center rounded-md border border-zinc-900 text-sm text-zinc-500">
+              Not enough daily values yet.
+            </div>
+          )}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function Sparkline({ points }: { points: TrendPoint[] }) {
+  const values = points.map((p) => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = max - min || 1;
+  const coords = points.map((point, i) => {
+    const x = points.length === 1 ? 0 : (i / (points.length - 1)) * 100;
+    const y = 42 - ((point.value - min) / spread) * 36 - 3;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+
+  return (
+    <div>
+      <svg viewBox="0 0 100 48" className="h-32 w-full overflow-visible">
+        <polyline
+          points={coords.join(" ")}
+          fill="none"
+          stroke="rgb(249 115 22)"
+          strokeWidth="1.8"
+          vectorEffect="non-scaling-stroke"
+        />
+        {coords.map((coord, i) => {
+          const [x, y] = coord.split(",");
+          return <circle key={i} cx={x} cy={y} r="1.4" fill="rgb(251 146 60)" />;
+        })}
+      </svg>
+      <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+        <span>{points[0]?.label}</span>
+        <span>{points[points.length - 1]?.label}</span>
+      </div>
     </div>
   );
 }
@@ -126,19 +316,21 @@ function Card({
   label,
   value,
   hint,
-  valueClass = "text-zinc-100",
+  accent,
 }: {
   label: string;
   value: string;
   hint?: string;
-  valueClass?: string;
+  accent?: boolean;
 }) {
   return (
-    <Panel className="p-4">
+    <Panel className={`p-4 ${accent ? "border-orange-500/40 bg-orange-950/15" : ""}`}>
       <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
         {label}
       </p>
-      <p className={`mt-2 font-mono text-xl ${valueClass}`}>{value}</p>
+      <p className={`mt-2 font-mono text-xl ${accent ? "text-orange-300" : "text-zinc-100"}`}>
+        {value}
+      </p>
       {hint ? <p className="mt-1 text-[11px] text-zinc-600">{hint}</p> : null}
     </Panel>
   );
@@ -153,4 +345,13 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-right text-zinc-300">{value}</span>
     </div>
   );
+}
+
+function formatInr(value: number | null): string {
+  if (value == null) return "—";
+  return "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(value));
+}
+
+function formatCompact(value: number): string {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 }).format(value);
 }

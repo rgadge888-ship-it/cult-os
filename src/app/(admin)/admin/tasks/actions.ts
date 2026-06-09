@@ -55,7 +55,6 @@ export async function createTask(
   revalidatePath("/admin/tasks");
   if (client_id) {
     revalidatePath(`/admin/clients/${client_id}`);
-    revalidatePath(`/admin/clients/${client_id}/tasks`);
   }
   return { ok: Date.now() };
 }
@@ -110,6 +109,5 @@ function revalidateTaskPaths(clientId: string | null) {
   revalidatePath("/admin/tasks");
   if (clientId) {
     revalidatePath(`/admin/clients/${clientId}`);
-    revalidatePath(`/admin/clients/${clientId}/tasks`);
   }
 }

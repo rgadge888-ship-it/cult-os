@@ -187,7 +187,6 @@ export async function createTasksFromMom(
 
   revalidatePath("/admin/tasks");
   revalidatePath(`/admin/clients/${clientId}`);
-  revalidatePath(`/admin/clients/${clientId}/tasks`);
   revalidatePath(`/admin/clients/${clientId}/reports/${reportId}`);
   return { ok: Date.now(), count: rows.length };
 }

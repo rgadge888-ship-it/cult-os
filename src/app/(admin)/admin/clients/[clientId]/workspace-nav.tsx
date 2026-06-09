@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const SECTIONS = [
   { label: "Overview", path: "" },
   { label: "Reports", path: "reports" },
-  { label: "Tasks", path: "tasks" },
+  { label: "Daily Data", path: "daily-data" },
   { label: "Deliverables", path: "deliverables" },
   { label: "Login", path: "login" },
   { label: "Data Source", path: "data" },

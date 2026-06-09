@@ -1,25 +1,8 @@
 import Link from "next/link";
 import { getCurrentClientContext } from "@/lib/sheets/client-context";
-import {
-  getSheetMetadataAsAgency,
-  getSheetValuesAsAgency,
-} from "@/lib/google/sheets";
-import { resolveTabTitle } from "@/lib/sheets/tabs";
+import { loadDailyDataSheet, matchDailyDataColumns } from "@/lib/sheets/daily-data";
 import { Panel, SectionHeader } from "@/components/ui/section";
-import { parseNumber, parseDateRange } from "@/lib/reports/parse";
-
-function findHeaderIdx(rows: string[][], scan = 4): number {
-  let best = 0;
-  let bestN = -1;
-  for (let i = 0; i < Math.min(scan, rows.length); i++) {
-    const n = (rows[i] ?? []).filter((c) => c.trim() !== "").length;
-    if (n > bestN) {
-      bestN = n;
-      best = i;
-    }
-  }
-  return best;
-}
+import { parseNumber } from "@/lib/reports/parse";
 
 export default async function ClientDailyDataPage({
   searchParams,
@@ -40,50 +23,27 @@ export default async function ClientDailyDataPage({
   let tabTitle: string | null = null;
 
   if (client?.mainsheet_file_id) {
-    try {
-      const meta = await getSheetMetadataAsAgency(client.mainsheet_file_id);
-      const titles = meta.tabs.map((t) => t.title);
-      const resolved = resolveTabTitle("daily", client.tab_map, titles);
-      const tab = resolved ? meta.tabs.find((t) => t.title === resolved) : null;
-      if (!tab) {
-        err = "Couldn't find a Daily Data tab in your Mainsheet.";
-      } else {
-        tabTitle = tab.title;
-        const values = await getSheetValuesAsAgency(
-          client.mainsheet_file_id,
-          `'${tab.title}'!A:Z`,
-          { formatted: true },
-        );
-        const hIdx = findHeaderIdx(values);
-        headers = (values[hIdx] ?? []).map((h) => h.trim());
+      try {
+        const daily = await loadDailyDataSheet(client.mainsheet_file_id, client.tab_map);
+        tabTitle = daily.tabTitle;
+        headers = daily.headers;
+        totalDays = daily.totalRows;
         const todayIso = new Date().toISOString().slice(0, 10);
-        const parsedRows = values
-          .slice(hIdx + 1)
-          .filter((r) => r.some((c) => (c ?? "").trim() !== ""))
-          .map((r) => {
-            const dr = parseDateRange(((r[0] ?? "").toString().trim()));
-            return dr ? { row: r, iso: dr.start } : null;
-          })
-          .filter(Boolean) as { row: string[]; iso: string }[];
-
-        totalDays = parsedRows.length;
-
-        const filtered = parsedRows.filter(({ iso }) => {
-          if (iso > todayIso) return false; // no future
+        const filtered = daily.parsedRows.filter(({ iso }) => {
+          if (iso > todayIso) return false;
           if (hasCustom) return iso >= customFrom && iso <= customTo;
           return true;
         });
-        rows = filtered.map((p) => p.row).reverse(); // newest first
+        rows = filtered.map((p) => p.row).reverse();
+      } catch (e) {
+        err = e instanceof Error ? e.message : "Failed to read the Mainsheet.";
       }
-    } catch (e) {
-      err = e instanceof Error ? e.message : "Failed to read the Mainsheet.";
-    }
   }
 
-  const head = headers.map((h) => h.toLowerCase());
-  const iSpend = head.findIndex((h) => h === "with gst" || h === "ad spend" || h === "spend");
-  const iReg = head.findIndex((h) => h.includes("registration") && !h.includes("fb"));
-  const iRev = head.findIndex((h) => h.includes("total revenue"));
+  const columns = matchDailyDataColumns(headers);
+  const iSpend = columns.spend;
+  const iReg = columns.results;
+  const iRev = columns.revenue;
   const totalSpend = iSpend >= 0 ? rows.reduce((s, r) => s + (parseNumber(r[iSpend]) ?? 0), 0) : 0;
   const totalReg = iReg >= 0 ? rows.reduce((s, r) => s + (parseNumber(r[iReg]) ?? 0), 0) : 0;
   const totalRev = iRev >= 0 ? rows.reduce((s, r) => s + (parseNumber(r[iRev]) ?? 0), 0) : 0;

@@ -3,9 +3,11 @@ import { parseNumber } from "@/lib/reports/parse";
 import { resolveTabTitle, type TabMap } from "@/lib/sheets/tabs";
 
 export type ResultCostMetric = "CPP" | "CPR" | "CPL";
+export type FoundationKpiKind = "costPerResult" | "ctr" | "cpm" | "custom";
 
 export type FoundationKpi = {
   label: string;
+  kind: FoundationKpiKind;
   target: number | null;
   raw: string;
 };
@@ -15,6 +17,7 @@ export type FoundationSheet = {
   resultMetric: ResultCostMetric | null;
   webinarDateRange: string | null;
   goals: { label: string; value: string }[];
+  targets: FoundationKpi[];
   kpis: {
     costPerResult: FoundationKpi | null;
     ctr: FoundationKpi | null;
@@ -58,7 +61,7 @@ function isTargetHeader(header: string): boolean {
   );
 }
 
-function classifyKpi(label: string): keyof FoundationSheet["kpis"] | null {
+function classifyKpi(label: string): Exclude<FoundationKpiKind, "custom"> | null {
   const h = norm(label);
   if (h.includes("ctr") || h.includes("click through rate")) return "ctr";
   if (h.includes("cpm") || h.includes("cost per mille") || h.includes("cost per thousand")) {
@@ -78,7 +81,37 @@ function classifyKpi(label: string): keyof FoundationSheet["kpis"] | null {
   return null;
 }
 
-function ingestEntry(sheet: FoundationSheet, label: string, rawValue: string) {
+function hasTargetIntent(label: string): boolean {
+  const h = norm(label);
+  return (
+    h.includes("target") ||
+    h.includes("kpi") ||
+    h.includes("ideal") ||
+    h.includes("goal") ||
+    h.includes("benchmark")
+  );
+}
+
+function upsertTarget(sheet: FoundationSheet, kpi: FoundationKpi) {
+  const key = norm(kpi.label);
+  const existingIdx = sheet.targets.findIndex((target) => norm(target.label) === key);
+  if (existingIdx >= 0) {
+    sheet.targets[existingIdx] = kpi;
+  } else {
+    sheet.targets.push(kpi);
+  }
+
+  if (kpi.kind !== "custom") {
+    sheet.kpis[kpi.kind] = kpi;
+  }
+}
+
+function ingestEntry(
+  sheet: FoundationSheet,
+  label: string,
+  rawValue: string,
+  options: { forceTarget?: boolean } = {},
+) {
   const cleanLabel = label.trim();
   const cleanValue = rawValue.trim();
   if (!cleanLabel || !cleanValue) return;
@@ -103,15 +136,23 @@ function ingestEntry(sheet: FoundationSheet, label: string, rawValue: string) {
   }
 
   const kpiKey = classifyKpi(cleanLabel);
-  if (kpiKey) {
-    sheet.kpis[kpiKey] = {
+  const targetValue = parseNumber(cleanValue);
+  if (targetValue != null && (kpiKey || options.forceTarget || hasTargetIntent(cleanLabel))) {
+    const kpi: FoundationKpi = {
       label: cleanLabel,
-      target: parseNumber(cleanValue),
+      kind: kpiKey ?? "custom",
+      target: targetValue,
       raw: cleanValue,
     };
+    upsertTarget(sheet, kpi);
     if (kpiKey === "costPerResult") {
       sheet.resultMetric = metricFromLabel ?? metricFromValue ?? sheet.resultMetric;
     }
+    return;
+  }
+
+  if (kpiKey === "costPerResult" && metricFromValue) {
+    sheet.resultMetric = metricFromValue;
     return;
   }
 
@@ -139,6 +180,7 @@ export async function loadFoundationSheet(
     resultMetric: null,
     webinarDateRange: null,
     goals: [],
+    targets: [],
     kpis: {
       costPerResult: null,
       ctr: null,
@@ -169,7 +211,7 @@ export async function loadFoundationSheet(
     const targetIdx = headers.findIndex(isTargetHeader);
 
     for (const row of rows.slice(headerRowIdx + 1)) {
-      ingestEntry(sheet, row[metricIdx] ?? "", row[targetIdx] ?? "");
+      ingestEntry(sheet, row[metricIdx] ?? "", row[targetIdx] ?? "", { forceTarget: true });
     }
   }
 

@@ -1,11 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getSheetMetadataAsAgency, getSheetValuesAsAgency } from "@/lib/google/sheets";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
-  findHeaderIdx,
   loadDailyDataSheet,
   matchDailyDataColumns,
   summarizeDailyRows,
@@ -13,7 +11,6 @@ import {
   type DailyDataRow,
 } from "@/lib/sheets/daily-data";
 import { loadFoundationSheet, type FoundationKpi, type FoundationSheet } from "@/lib/sheets/foundation";
-import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { parseNumber } from "@/lib/reports/parse";
 import type { Client, WeeklyReport } from "@/lib/db/types";
 
@@ -68,6 +65,7 @@ export default async function ClientOverviewPage({
   let cpaTrend: TrendPoint[] = [];
   let ctrTrend: TrendPoint[] = [];
   let dailyTabTitle: string | null = null;
+  let dailyHeaders: string[] = [];
   let foundation: FoundationSheet | null = null;
 
   if (c.mainsheet_file_id) {
@@ -75,6 +73,7 @@ export default async function ClientOverviewPage({
       foundation = await loadFoundationSheet(c.mainsheet_file_id, c.tab_map);
       const daily = await loadDailyDataSheet(c.mainsheet_file_id, c.tab_map);
       dailyTabTitle = daily.tabTitle;
+      dailyHeaders = daily.headers;
       columns = matchDailyDataColumns(daily.headers, foundation?.resultMetric);
       monthRows = filterCurrentMonth(daily.parsedRows);
       cpaTrend = buildCostTrend(monthRows, columns);
@@ -87,9 +86,13 @@ export default async function ClientOverviewPage({
   }
 
   const summary = columns ? summarizeDailyRows(monthRows, columns) : null;
-  const osValue = c.mainsheet_file_id
-    ? await readMonthlyOs(c.mainsheet_file_id, c.tab_map).catch(() => null)
-    : null;
+  const alertItems = buildAlertItems({
+    columns,
+    foundation,
+    headers: dailyHeaders,
+    rows: monthRows,
+    summary,
+  });
 
   return (
     <div className="space-y-10">
@@ -105,11 +108,10 @@ export default async function ClientOverviewPage({
             ) : null
           }
         />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card label="Ad spend" value={formatInr(summary?.totalSpend ?? null)} />
           <Card label="Revenue" value={formatInr(summary?.totalRevenue ?? null)} accent />
           <Card label={columns?.costLabel ?? "CPL"} value={formatInr(summary?.costPerResult ?? null)} />
-          <Card label="OS monthly" value={osValue ?? "—"} hint="Monthly Data OS column" />
           <Card
             label="Open tasks"
             value={String(openTasks ?? 0)}
@@ -148,27 +150,10 @@ export default async function ClientOverviewPage({
             ) : null
           }
         />
-        <div className="grid gap-4 md:grid-cols-3">
-          <AlertCard
-            label={columns?.costLabel ?? foundation?.resultMetric ?? "Cost/result"}
-            current={summary?.costPerResult ?? null}
-            target={foundation?.kpis.costPerResult ?? null}
-            lowerIsBetter
-            prefix="₹"
-          />
-          <AlertCard
-            label="CTR"
-            current={summary?.avgCtr ?? null}
-            target={foundation?.kpis.ctr ?? null}
-            suffix="%"
-          />
-          <AlertCard
-            label="CPM"
-            current={summary?.avgCpm ?? null}
-            target={foundation?.kpis.cpm ?? null}
-            lowerIsBetter
-            prefix="₹"
-          />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {alertItems.map((item) => (
+            <AlertCard key={item.key} item={item} />
+          ))}
         </div>
         {foundation?.webinarDateRange || foundation?.goals.length ? (
           <Panel className="mt-4 p-4">
@@ -258,50 +243,148 @@ function buildColumnTrend(rows: DailyDataRow[], column: number): TrendPoint[] {
     .filter(Boolean) as TrendPoint[];
 }
 
-async function readMonthlyOs(fileId: string, tabMap: Client["tab_map"]): Promise<string | null> {
-  const meta = await getSheetMetadataAsAgency(fileId);
-  const monthlyTitle = resolveTabTitle("monthly", tabMap, meta.tabs.map((t) => t.title));
-  const monthlyTab = monthlyTitle ? meta.tabs.find((t) => t.title === monthlyTitle) : null;
-  if (!monthlyTab) return null;
-
-  const rows = await getSheetValuesAsAgency(fileId, `'${monthlyTab.title}'!A:Z`, {
-    formatted: true,
-  });
-  const hIdx = findHeaderIdx(rows);
-  const headers = (rows[hIdx] ?? []).map((h) => h.trim().toLowerCase());
-  const osIdx = headers.findIndex(
-    (h) =>
-      h === "os" ||
-      h === "os monthly" ||
-      h.includes("overall score") ||
-      h.includes("overall status") ||
-      h.includes("overall summary"),
-  );
-  if (osIdx < 0) return null;
-  const dataRows = rows.slice(hIdx + 1).filter((r) => r.some((c) => (c ?? "").trim() !== ""));
-  const latest = dataRows[dataRows.length - 1];
-  return latest ? (latest[osIdx] ?? "").toString().trim() || null : null;
-}
-
-function AlertCard({
-  label,
-  current,
-  target,
-  lowerIsBetter = false,
-  prefix = "",
-  suffix = "",
-}: {
+type AlertItem = {
+  key: string;
   label: string;
   current: number | null;
   target: FoundationKpi | null;
-  lowerIsBetter?: boolean;
-  prefix?: string;
-  suffix?: string;
-}) {
-  const targetValue = target?.target ?? null;
-  const hasData = current != null && targetValue != null;
-  const isAlert = hasData ? (lowerIsBetter ? current > targetValue : current < targetValue) : false;
-  const delta = hasData ? current - targetValue : null;
+  lowerIsBetter: boolean;
+  prefix: string;
+  suffix: string;
+  source: string;
+};
+
+function buildAlertItems({
+  columns,
+  foundation,
+  headers,
+  rows,
+  summary,
+}: {
+  columns: DailyDataColumns | null;
+  foundation: FoundationSheet | null;
+  headers: string[];
+  rows: DailyDataRow[];
+  summary: ReturnType<typeof summarizeDailyRows> | null;
+}): AlertItem[] {
+  const core: AlertItem[] = [
+    {
+      key: "cost-result",
+      label: columns?.costLabel ?? foundation?.resultMetric ?? "Cost/result",
+      current: summary?.costPerResult ?? null,
+      target: foundation?.kpis.costPerResult ?? null,
+      lowerIsBetter: true,
+      prefix: "₹",
+      suffix: "",
+      source: "Daily Data actual column",
+    },
+    {
+      key: "ctr",
+      label: "CTR",
+      current: summary?.avgCtr ?? null,
+      target: foundation?.kpis.ctr ?? null,
+      lowerIsBetter: false,
+      prefix: "",
+      suffix: "%",
+      source: "Daily Data CTR percentage",
+    },
+    {
+      key: "cpm",
+      label: "CPM",
+      current: summary?.avgCpm ?? null,
+      target: foundation?.kpis.cpm ?? null,
+      lowerIsBetter: true,
+      prefix: "₹",
+      suffix: "",
+      source: "Daily Data CPM",
+    },
+  ];
+
+  const customTargets =
+    foundation?.targets
+      .filter((target) => target.kind === "custom")
+      .map((target) => {
+        const current = averageColumnByLabel(rows, headers, target.label);
+        const format = inferAlertFormat(target.label);
+        return {
+          key: `custom-${target.label}`,
+          label: target.label,
+          current,
+          target,
+          lowerIsBetter: format.lowerIsBetter,
+          prefix: format.prefix,
+          suffix: format.suffix,
+          source: current == null ? "Foundation target only" : "Matched Daily Data column",
+        };
+      }) ?? [];
+
+  return [...core, ...customTargets];
+}
+
+function averageColumnByLabel(
+  rows: DailyDataRow[],
+  headers: string[],
+  label: string,
+): number | null {
+  const wanted = compactMetricName(label);
+  const idx = headers.findIndex((header) => compactMetricName(header) === wanted);
+  if (idx < 0) return null;
+
+  const values = rows
+    .map((row) => parseNumber(row.row[idx]))
+    .filter((value): value is number => value != null);
+  return values.length > 0
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : null;
+}
+
+function compactMetricName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\\/g, "")
+    .replace(/\b(target|goal|ideal|actual|percentage|percent)\b/g, "")
+    .replace(/[()%₹$,:/_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function inferAlertFormat(label: string): {
+  lowerIsBetter: boolean;
+  prefix: string;
+  suffix: string;
+} {
+  const metric = compactMetricName(label);
+  const isCost =
+    /\bcost\b/.test(metric) ||
+    /\bcpp\b/.test(metric) ||
+    /\bcpr\b/.test(metric) ||
+    /\bcpl\b/.test(metric) ||
+    /\bcpm\b/.test(metric) ||
+    /\bcpc\b/.test(metric) ||
+    metric.includes("spend");
+  const isPercent =
+    /\bctr\b/.test(metric) ||
+    metric.includes("rate") ||
+    metric.includes("ratio") ||
+    metric.includes("percent");
+
+  return {
+    lowerIsBetter: isCost,
+    prefix: isCost ? "₹" : "",
+    suffix: isPercent ? "%" : "",
+  };
+}
+
+function AlertCard({ item }: { item: AlertItem }) {
+  const currentValue = item.current;
+  const targetValue = item.target?.target ?? null;
+  const hasData = currentValue != null && targetValue != null;
+  const isAlert = hasData
+    ? item.lowerIsBetter
+      ? currentValue > targetValue
+      : currentValue < targetValue
+    : false;
+  const delta = hasData ? currentValue - targetValue : null;
 
   return (
     <Panel
@@ -316,10 +399,12 @@ function AlertCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-            {label}
+            {item.label}
           </p>
           <p className={`mt-2 font-mono text-xl ${isAlert ? "text-red-300" : "text-zinc-100"}`}>
-            {current == null ? "—" : `${prefix}${formatCompact(current)}${suffix}`}
+            {item.current == null
+              ? "—"
+              : `${item.prefix}${formatCompact(item.current)}${item.suffix}`}
           </p>
         </div>
         <span
@@ -334,17 +419,35 @@ function AlertCard({
           {isAlert ? "Alert" : hasData ? "On track" : "Waiting"}
         </span>
       </div>
-      <p className="mt-3 text-xs text-zinc-500">
-        Target: {target?.raw ?? "Add in Foundation Sheet"}
-      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-zinc-900 pt-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+            Current
+          </p>
+          <p className="mt-1 text-sm text-zinc-300">
+            {item.current == null
+              ? "No matching data"
+              : `${item.prefix}${formatCompact(item.current)}${item.suffix}`}
+          </p>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+            Target
+          </p>
+          <p className="mt-1 text-sm text-zinc-300">
+            {item.target?.raw ?? "Add numeric target"}
+          </p>
+        </div>
+      </div>
       {delta != null ? (
         <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-600">
           Gap: {delta > 0 ? "+" : ""}
-          {prefix}
+          {item.prefix}
           {formatCompact(delta)}
-          {suffix}
+          {item.suffix}
         </p>
       ) : null}
+      <p className="mt-2 text-[11px] text-zinc-600">{item.source}</p>
     </Panel>
   );
 }
@@ -408,28 +511,52 @@ function Sparkline({
   const coords = points.map((point, i) => {
     const x = points.length === 1 ? 0 : (i / (points.length - 1)) * 100;
     const y = 42 - ((point.value - min) / spread) * 36 - 3;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
+    return { point, x, y };
   });
 
   return (
     <div>
       <svg viewBox="0 0 100 48" className="h-32 w-full overflow-visible">
         <polyline
-          points={coords.join(" ")}
+          points={coords.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")}
           fill="none"
           stroke="rgb(249 115 22)"
           strokeWidth="1.8"
           vectorEffect="non-scaling-stroke"
         />
-        {coords.map((coord, i) => {
-          const [x, y] = coord.split(",");
-          const point = points[i];
-          const title = `${point.label}: ${valuePrefix}${formatCompact(point.value)}${valueSuffix}`;
+        {coords.map(({ point, x, y }, i) => {
+          const valueText = `${valuePrefix}${formatCompact(point.value)}${valueSuffix}`;
+          const tooltipText = `${point.label}: ${valueText}`;
+          const width = Math.min(44, Math.max(25, tooltipText.length * 1.18));
+          const tooltipX = Math.max(1, Math.min(99 - width, x - width / 2));
+          const tooltipY = y > 16 ? y - 14 : y + 7;
           return (
-            <g key={i} className="cursor-crosshair">
-              <title>{title}</title>
+            <g key={i} className="group cursor-crosshair">
+              <g className="pointer-events-none opacity-0 transition-opacity group-hover:opacity-100">
+                <rect
+                  x={tooltipX}
+                  y={tooltipY}
+                  width={width}
+                  height="8"
+                  rx="1.2"
+                  fill="rgb(9 9 11)"
+                  stroke="rgb(249 115 22)"
+                  strokeOpacity="0.7"
+                  strokeWidth="0.4"
+                />
+                <text
+                  x={tooltipX + width / 2}
+                  y={tooltipY + 5.2}
+                  textAnchor="middle"
+                  fill="rgb(255 237 213)"
+                  fontSize="3.1"
+                  fontFamily="monospace"
+                >
+                  {tooltipText}
+                </text>
+              </g>
               <circle cx={x} cy={y} r="1.4" fill="rgb(251 146 60)" />
-              <circle cx={x} cy={y} r="4.5" fill="transparent" />
+              <circle cx={x} cy={y} r="5" fill="transparent" pointerEvents="all" />
             </g>
           );
         })}

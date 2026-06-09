@@ -1,5 +1,6 @@
 import { getSheetMetadataAsAgency, getSheetValuesAsAgency } from "@/lib/google/sheets";
 import { parseDateRange, parseNumber } from "@/lib/reports/parse";
+import type { ResultCostMetric } from "@/lib/sheets/foundation";
 import { resolveTabTitle, type TabMap } from "@/lib/sheets/tabs";
 
 export type DailyDataRow = {
@@ -23,6 +24,7 @@ export type DailyDataColumns = {
   results: number;
   costPerResult: number;
   ctr: number;
+  cpm: number;
   costLabel: string;
   resultLabel: string;
 };
@@ -69,7 +71,15 @@ function findCol(headers: string[], predicates: ((h: string) => boolean)[]): num
   return normalized.findIndex((h) => predicates.some((predicate) => predicate(h)));
 }
 
-function isActualCostHeader(header: string): boolean {
+function isActualCostHeader(header: string, preferredMetric?: ResultCostMetric | null): boolean {
+  const preferred = preferredMetric?.toLowerCase();
+  if (preferred) {
+    return (
+      header === `${preferred} actual` ||
+      (header.startsWith(preferred) && header.includes("actual"))
+    );
+  }
+
   return ["cpp", "cpr", "cpl"].some(
     (metric) =>
       header === `${metric} actual` ||
@@ -112,7 +122,10 @@ export async function loadDailyDataSheet(
   };
 }
 
-export function matchDailyDataColumns(headers: string[]): DailyDataColumns {
+export function matchDailyDataColumns(
+  headers: string[],
+  preferredCostMetric?: ResultCostMetric | null,
+): DailyDataColumns {
   const date = findCol(headers, [(h) => h === "date" || h.startsWith("date")]);
   const spend = findCol(headers, [
     (h) => h === "with gst",
@@ -133,15 +146,24 @@ export function matchDailyDataColumns(headers: string[]): DailyDataColumns {
     (h) => h.includes("purchase"),
     (h) => h.includes("result"),
   ]);
-  const costPerResult = findCol(headers, [isActualCostHeader]);
+  let costPerResult = findCol(headers, [(h) => isActualCostHeader(h, preferredCostMetric)]);
+  if (costPerResult < 0) costPerResult = findCol(headers, [(h) => isActualCostHeader(h)]);
   const ctr = findCol(headers, [
     (h) => h === "ctr percentage",
     (h) => h === "ctr",
     (h) => h === "ctr actual",
     (h) => h.includes("click through rate"),
   ]);
+  const cpm = findCol(headers, [(h) => h === "cpm", (h) => h === "cpm actual"]);
   const costHeader = costPerResult >= 0 ? norm(headers[costPerResult] ?? "") : "";
   const resultHeader = results >= 0 ? headers[results] : "Results";
+  const costLabel = costHeader.includes("cpp")
+    ? "CPP"
+    : costHeader.includes("cpl")
+      ? "CPL"
+      : costHeader.includes("cpr")
+        ? "CPR"
+        : preferredCostMetric ?? "CPR";
 
   return {
     date,
@@ -150,11 +172,8 @@ export function matchDailyDataColumns(headers: string[]): DailyDataColumns {
     results,
     costPerResult,
     ctr,
-    costLabel: costHeader.includes("cpp")
-      ? "CPP"
-      : costHeader.includes("cpl")
-        ? "CPL"
-        : "CPR",
+    cpm,
+    costLabel,
     resultLabel: resultHeader || "Results",
   };
 }
@@ -192,6 +211,16 @@ export function summarizeDailyRows(rows: DailyDataRow[], columns: DailyDataColum
     ctrValues.length > 0
       ? ctrValues.reduce((sum, value) => sum + value, 0) / ctrValues.length
       : null;
+  const cpmValues =
+    columns.cpm >= 0
+      ? rows
+          .map((r) => parseNumber(r.row[columns.cpm]))
+          .filter((v): v is number => v != null)
+      : [];
+  const avgCpm =
+    cpmValues.length > 0
+      ? cpmValues.reduce((sum, value) => sum + value, 0) / cpmValues.length
+      : null;
 
-  return { totalSpend, totalRevenue, totalResults, costPerResult, avgCtr };
+  return { totalSpend, totalRevenue, totalResults, costPerResult, avgCtr, avgCpm };
 }

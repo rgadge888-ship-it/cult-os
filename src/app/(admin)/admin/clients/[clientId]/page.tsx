@@ -12,6 +12,7 @@ import {
   type DailyDataColumns,
   type DailyDataRow,
 } from "@/lib/sheets/daily-data";
+import { loadFoundationSheet, type FoundationKpi, type FoundationSheet } from "@/lib/sheets/foundation";
 import { resolveTabTitle } from "@/lib/sheets/tabs";
 import { parseNumber } from "@/lib/reports/parse";
 import type { Client, WeeklyReport } from "@/lib/db/types";
@@ -67,12 +68,14 @@ export default async function ClientOverviewPage({
   let cpaTrend: TrendPoint[] = [];
   let ctrTrend: TrendPoint[] = [];
   let dailyTabTitle: string | null = null;
+  let foundation: FoundationSheet | null = null;
 
   if (c.mainsheet_file_id) {
     try {
+      foundation = await loadFoundationSheet(c.mainsheet_file_id, c.tab_map);
       const daily = await loadDailyDataSheet(c.mainsheet_file_id, c.tab_map);
       dailyTabTitle = daily.tabTitle;
-      columns = matchDailyDataColumns(daily.headers);
+      columns = matchDailyDataColumns(daily.headers, foundation?.resultMetric);
       monthRows = filterCurrentMonth(daily.parsedRows);
       cpaTrend = buildCostTrend(monthRows, columns);
       ctrTrend = buildColumnTrend(monthRows, columns.ctr);
@@ -131,6 +134,54 @@ export default async function ClientOverviewPage({
           points={ctrTrend}
           valueSuffix="%"
         />
+      </section>
+
+      <section>
+        <SectionHeader
+          label="red alert"
+          className="mb-3"
+          action={
+            foundation?.tabTitle ? (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-red-300">
+                {foundation.tabTitle}
+              </span>
+            ) : null
+          }
+        />
+        <div className="grid gap-4 md:grid-cols-3">
+          <AlertCard
+            label={columns?.costLabel ?? foundation?.resultMetric ?? "Cost/result"}
+            current={summary?.costPerResult ?? null}
+            target={foundation?.kpis.costPerResult ?? null}
+            lowerIsBetter
+            prefix="₹"
+          />
+          <AlertCard
+            label="CTR"
+            current={summary?.avgCtr ?? null}
+            target={foundation?.kpis.ctr ?? null}
+            suffix="%"
+          />
+          <AlertCard
+            label="CPM"
+            current={summary?.avgCpm ?? null}
+            target={foundation?.kpis.cpm ?? null}
+            lowerIsBetter
+            prefix="₹"
+          />
+        </div>
+        {foundation?.webinarDateRange || foundation?.goals.length ? (
+          <Panel className="mt-4 p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              {foundation.webinarDateRange ? (
+                <Row label="Webinar range" value={foundation.webinarDateRange} />
+              ) : null}
+              {foundation.goals.slice(0, 4).map((goal) => (
+                <Row key={`${goal.label}-${goal.value}`} label={goal.label} value={goal.value} />
+              ))}
+            </div>
+          </Panel>
+        ) : null}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -230,6 +281,72 @@ async function readMonthlyOs(fileId: string, tabMap: Client["tab_map"]): Promise
   const dataRows = rows.slice(hIdx + 1).filter((r) => r.some((c) => (c ?? "").trim() !== ""));
   const latest = dataRows[dataRows.length - 1];
   return latest ? (latest[osIdx] ?? "").toString().trim() || null : null;
+}
+
+function AlertCard({
+  label,
+  current,
+  target,
+  lowerIsBetter = false,
+  prefix = "",
+  suffix = "",
+}: {
+  label: string;
+  current: number | null;
+  target: FoundationKpi | null;
+  lowerIsBetter?: boolean;
+  prefix?: string;
+  suffix?: string;
+}) {
+  const targetValue = target?.target ?? null;
+  const hasData = current != null && targetValue != null;
+  const isAlert = hasData ? (lowerIsBetter ? current > targetValue : current < targetValue) : false;
+  const delta = hasData ? current - targetValue : null;
+
+  return (
+    <Panel
+      className={`p-4 ${
+        isAlert
+          ? "border-red-500/50 bg-red-950/20"
+          : hasData
+            ? "border-emerald-500/30 bg-emerald-950/10"
+            : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+            {label}
+          </p>
+          <p className={`mt-2 font-mono text-xl ${isAlert ? "text-red-300" : "text-zinc-100"}`}>
+            {current == null ? "—" : `${prefix}${formatCompact(current)}${suffix}`}
+          </p>
+        </div>
+        <span
+          className={`rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
+            isAlert
+              ? "border-red-500/40 bg-red-500/10 text-red-300"
+              : hasData
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                : "border-zinc-800 text-zinc-500"
+          }`}
+        >
+          {isAlert ? "Alert" : hasData ? "On track" : "Waiting"}
+        </span>
+      </div>
+      <p className="mt-3 text-xs text-zinc-500">
+        Target: {target?.raw ?? "Add in Foundation Sheet"}
+      </p>
+      {delta != null ? (
+        <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+          Gap: {delta > 0 ? "+" : ""}
+          {prefix}
+          {formatCompact(delta)}
+          {suffix}
+        </p>
+      ) : null}
+    </Panel>
+  );
 }
 
 function TrendPanel({

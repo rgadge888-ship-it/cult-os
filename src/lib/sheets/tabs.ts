@@ -10,7 +10,8 @@ export type TabRole =
   | "monthly"
   | "webinar"
   | "creative"
-  | "schedule";
+  | "schedule"
+  | "foundation";
 
 export type TabMap = Partial<Record<TabRole, string>>;
 
@@ -22,6 +23,7 @@ export const TAB_ROLES: { role: TabRole; label: string; hint: string }[] = [
   { role: "webinar", label: "Webinar Data", hint: "per-webinar analysis" },
   { role: "creative", label: "Creative Tracker", hint: "per-creative ad performance" },
   { role: "schedule", label: "Schedule", hint: "workshop dates / tags" },
+  { role: "foundation", label: "Foundation Sheet", hint: "goals, KPI targets, webinar range" },
 ];
 
 // Auto-detect fallbacks. Order matters — more specific patterns first.
@@ -34,6 +36,7 @@ const AUTO_PATTERNS: Record<TabRole, RegExp[]> = {
   webinar: [/webinar/i, /workshop analysis/i],
   creative: [/creative/i, /\bad\s*tracker/i],
   schedule: [/schedule/i, /internal sheet/i, /workshop schedule/i],
+  foundation: [/foundation/i, /goals?\s*(?:&|and)?\s*kpi/i, /\bkpi\s*goals?\b/i],
 };
 
 // Resolve a role to an actual tab title given the pinned map + available titles.

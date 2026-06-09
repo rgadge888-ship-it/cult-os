@@ -15,8 +15,6 @@ export type FoundationKpi = {
 export type FoundationSheet = {
   tabTitle: string;
   resultMetric: ResultCostMetric | null;
-  webinarDateRange: string | null;
-  goals: { label: string; value: string }[];
   targets: FoundationKpi[];
   kpis: {
     costPerResult: FoundationKpi | null;
@@ -47,18 +45,11 @@ function parseResultMetric(raw: string): ResultCostMetric | null {
 }
 
 function isMetricHeader(header: string): boolean {
-  return ["metric", "kpi", "parameter", "goal", "goals"].includes(header);
+  return header === "kpi";
 }
 
 function isTargetHeader(header: string): boolean {
-  return (
-    header === "target" ||
-    header === "ideal" ||
-    header === "goal" ||
-    header === "kpi goal" ||
-    header === "target value" ||
-    header === "ideal value"
-  );
+  return header === "goal";
 }
 
 function classifyKpi(label: string): Exclude<FoundationKpiKind, "custom"> | null {
@@ -81,17 +72,6 @@ function classifyKpi(label: string): Exclude<FoundationKpiKind, "custom"> | null
   return null;
 }
 
-function hasTargetIntent(label: string): boolean {
-  const h = norm(label);
-  return (
-    h.includes("target") ||
-    h.includes("kpi") ||
-    h.includes("ideal") ||
-    h.includes("goal") ||
-    h.includes("benchmark")
-  );
-}
-
 function upsertTarget(sheet: FoundationSheet, kpi: FoundationKpi) {
   const key = norm(kpi.label);
   const existingIdx = sheet.targets.findIndex((target) => norm(target.label) === key);
@@ -110,34 +90,17 @@ function ingestEntry(
   sheet: FoundationSheet,
   label: string,
   rawValue: string,
-  options: { forceTarget?: boolean } = {},
 ) {
   const cleanLabel = label.trim();
   const cleanValue = rawValue.trim();
   if (!cleanLabel || !cleanValue) return;
 
-  const normalized = norm(cleanLabel);
   const metricFromLabel = parseResultMetric(cleanLabel);
   const metricFromValue = parseResultMetric(cleanValue);
 
-  if (
-    normalized.includes("result metric") ||
-    normalized.includes("cost metric") ||
-    normalized.includes("result cost") ||
-    normalized.includes("cost per result type")
-  ) {
-    sheet.resultMetric = metricFromValue ?? metricFromLabel ?? sheet.resultMetric;
-    return;
-  }
-
-  if (normalized.includes("webinar") && normalized.includes("date")) {
-    sheet.webinarDateRange = cleanValue;
-    return;
-  }
-
   const kpiKey = classifyKpi(cleanLabel);
   const targetValue = parseNumber(cleanValue);
-  if (targetValue != null && (kpiKey || options.forceTarget || hasTargetIntent(cleanLabel))) {
+  if (targetValue != null) {
     const kpi: FoundationKpi = {
       label: cleanLabel,
       kind: kpiKey ?? "custom",
@@ -151,13 +114,9 @@ function ingestEntry(
     return;
   }
 
-  if (kpiKey === "costPerResult" && metricFromValue) {
-    sheet.resultMetric = metricFromValue;
+  if (metricFromLabel || metricFromValue) {
+    sheet.resultMetric = metricFromLabel ?? metricFromValue;
     return;
-  }
-
-  if (normalized.includes("goal")) {
-    sheet.goals.push({ label: cleanLabel, value: cleanValue });
   }
 }
 
@@ -178,8 +137,6 @@ export async function loadFoundationSheet(
   const sheet: FoundationSheet = {
     tabTitle: tab.title,
     resultMetric: null,
-    webinarDateRange: null,
-    goals: [],
     targets: [],
     kpis: {
       costPerResult: null,
@@ -188,31 +145,18 @@ export async function loadFoundationSheet(
     },
   };
 
-  for (const row of rows) {
-    const cells = row.map((cell) => (cell ?? "").toString().trim());
-    if (cells.every((cell) => cell === "")) continue;
-
-    const headers = cells.map(norm);
-    const metricIdx = headers.findIndex(isMetricHeader);
-    const targetIdx = headers.findIndex(isTargetHeader);
-    if (metricIdx >= 0 && targetIdx >= 0) continue;
-
-    ingestEntry(sheet, cells[0] ?? "", cells[1] ?? "");
-  }
-
   const headerRowIdx = rows.findIndex((row) => {
     const headers = row.map((cell) => norm(cell ?? ""));
     return headers.some(isMetricHeader) && headers.some(isTargetHeader);
   });
+  if (headerRowIdx < 0) return sheet;
 
-  if (headerRowIdx >= 0) {
-    const headers = rows[headerRowIdx].map((cell) => norm(cell ?? ""));
-    const metricIdx = headers.findIndex(isMetricHeader);
-    const targetIdx = headers.findIndex(isTargetHeader);
+  const headers = rows[headerRowIdx].map((cell) => norm(cell ?? ""));
+  const metricIdx = headers.findIndex(isMetricHeader);
+  const targetIdx = headers.findIndex(isTargetHeader);
 
-    for (const row of rows.slice(headerRowIdx + 1)) {
-      ingestEntry(sheet, row[metricIdx] ?? "", row[targetIdx] ?? "", { forceTarget: true });
-    }
+  for (const row of rows.slice(headerRowIdx + 1)) {
+    ingestEntry(sheet, row[metricIdx] ?? "", row[targetIdx] ?? "");
   }
 
   return sheet;

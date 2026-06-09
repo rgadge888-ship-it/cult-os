@@ -151,22 +151,16 @@ export default async function ClientOverviewPage({
           }
         />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {alertItems.map((item) => (
-            <AlertCard key={item.key} item={item} />
-          ))}
+          {alertItems.length > 0 ? (
+            alertItems.map((item) => (
+              <AlertCard key={item.key} item={item} />
+            ))
+          ) : (
+            <Panel className="p-5 text-sm text-zinc-500 md:col-span-2 xl:col-span-3">
+              Add KPI and Goal columns in the Foundation Sheet to show alerts here.
+            </Panel>
+          )}
         </div>
-        {foundation?.webinarDateRange || foundation?.goals.length ? (
-          <Panel className="mt-4 p-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              {foundation.webinarDateRange ? (
-                <Row label="Webinar range" value={foundation.webinarDateRange} />
-              ) : null}
-              {foundation.goals.slice(0, 4).map((goal) => (
-                <Row key={`${goal.label}-${goal.value}`} label={goal.label} value={goal.value} />
-              ))}
-            </div>
-          </Panel>
-        ) : null}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -267,58 +261,48 @@ function buildAlertItems({
   rows: DailyDataRow[];
   summary: ReturnType<typeof summarizeDailyRows> | null;
 }): AlertItem[] {
-  const core: AlertItem[] = [
-    {
-      key: "cost-result",
-      label: columns?.costLabel ?? foundation?.resultMetric ?? "Cost/result",
-      current: summary?.costPerResult ?? null,
-      target: foundation?.kpis.costPerResult ?? null,
-      lowerIsBetter: true,
-      prefix: "₹",
-      suffix: "",
-      source: "Daily Data actual column",
-    },
-    {
-      key: "ctr",
-      label: "CTR",
-      current: summary?.avgCtr ?? null,
-      target: foundation?.kpis.ctr ?? null,
-      lowerIsBetter: false,
-      prefix: "",
-      suffix: "%",
-      source: "Daily Data CTR percentage",
-    },
-    {
-      key: "cpm",
-      label: "CPM",
-      current: summary?.avgCpm ?? null,
-      target: foundation?.kpis.cpm ?? null,
-      lowerIsBetter: true,
-      prefix: "₹",
-      suffix: "",
-      source: "Daily Data CPM",
-    },
-  ];
+  return (
+    foundation?.targets.map((target) => {
+      const format = inferAlertFormat(target.label);
+      const current = currentForKpi({ columns, headers, rows, summary, target });
+      return {
+        key: `kpi-${target.label}`,
+        label: target.label,
+        current,
+        target,
+        lowerIsBetter: format.lowerIsBetter,
+        prefix: format.prefix,
+        suffix: format.suffix,
+        source: current == null ? "No matching Daily Data column" : "Matched from Daily Data",
+      };
+    }) ?? []
+  );
+}
 
-  const customTargets =
-    foundation?.targets
-      .filter((target) => target.kind === "custom")
-      .map((target) => {
-        const current = averageColumnByLabel(rows, headers, target.label);
-        const format = inferAlertFormat(target.label);
-        return {
-          key: `custom-${target.label}`,
-          label: target.label,
-          current,
-          target,
-          lowerIsBetter: format.lowerIsBetter,
-          prefix: format.prefix,
-          suffix: format.suffix,
-          source: current == null ? "Foundation target only" : "Matched Daily Data column",
-        };
-      }) ?? [];
+function currentForKpi({
+  columns,
+  headers,
+  rows,
+  summary,
+  target,
+}: {
+  columns: DailyDataColumns | null;
+  headers: string[];
+  rows: DailyDataRow[];
+  summary: ReturnType<typeof summarizeDailyRows> | null;
+  target: FoundationKpi;
+}): number | null {
+  if (target.kind === "costPerResult") return summary?.costPerResult ?? null;
+  if (target.kind === "ctr") return summary?.avgCtr ?? null;
+  if (target.kind === "cpm") return summary?.avgCpm ?? null;
 
-  return [...core, ...customTargets];
+  const direct = averageColumnByLabel(rows, headers, target.label);
+  if (direct != null) return direct;
+  const targetName = compactMetricName(target.label);
+  if (targetName === compactMetricName(columns?.resultLabel ?? "")) {
+    return summary?.totalResults ?? null;
+  }
+  return null;
 }
 
 function averageColumnByLabel(

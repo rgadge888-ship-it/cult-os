@@ -1,7 +1,8 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useTransition } from "react";
-import { updateTaskStatus, updateTaskField } from "./actions";
+import { deleteTask, updateTaskStatus, updateTaskField } from "./actions";
 import { TASK_STATUS_OPTIONS, TASK_TYPE_LABEL } from "@/lib/tasks";
 import type { TaskPriority, TaskStatus, TaskType } from "@/lib/db/types";
 
@@ -36,9 +37,11 @@ export type TaskRowData = {
 export function TaskRow({
   task,
   admins,
+  canDelete,
 }: {
   task: TaskRowData;
   admins: { id: string; label: string }[];
+  canDelete: boolean;
 }) {
   const [pending, start] = useTransition();
 
@@ -53,6 +56,14 @@ export function TaskRow({
     if (diff <= 2) return "text-amber-400";
     return "text-zinc-400";
   })();
+
+  function onDelete() {
+    const ok = window.confirm(`Delete task "${task.title}"? This cannot be undone.`);
+    if (!ok) return;
+    start(async () => {
+      await deleteTask(task.id);
+    });
+  }
 
   return (
     <li
@@ -108,7 +119,11 @@ export function TaskRow({
         ))}
       </select>
 
-      <div className="col-span-2 grid grid-cols-2 gap-2 text-right font-mono text-[11px]">
+      <div
+        className={`col-span-2 grid ${
+          canDelete ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-2"
+        } gap-2 text-right font-mono text-[11px]`}
+      >
         <div className="text-zinc-500" title={task.created_at}>
           <span className="block text-[9px] uppercase tracking-widest text-zinc-700">
             Added
@@ -122,6 +137,18 @@ export function TaskRow({
           {task.due_date ? formatDate(task.due_date) : "—"}{" "}
           <span className={`ml-1 ${PRIORITY_COLOR[task.priority]}`}>•</span>
         </div>
+        {canDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={pending}
+            title="Delete task"
+            className="mt-3 inline-flex size-7 items-center justify-center rounded border border-zinc-800 text-zinc-500 hover:border-red-500/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 className="size-3.5" aria-hidden="true" />
+            <span className="sr-only">Delete task</span>
+          </button>
+        ) : null}
       </div>
     </li>
   );

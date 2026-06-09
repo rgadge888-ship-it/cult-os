@@ -17,7 +17,7 @@ export default async function TasksPage({
 }: {
   searchParams: Promise<{ view?: string; type?: string; client?: string }>;
 }) {
-  const { user } = await requireUser({ adminOnly: true });
+  const { user, profile } = await requireUser({ adminOnly: true });
   const sp = await searchParams;
   const view = VALID_VIEWS.has(sp.view ?? "") ? (sp.view as string) : "open";
   const type = VALID_TYPES.has(sp.type ?? "") ? (sp.type as TaskTypeFilter) : "all";
@@ -130,7 +130,12 @@ export default async function TasksPage({
               </div>
               <ul>
                 {rows.map((t) => (
-                  <TaskRow key={t.id} task={t} admins={adminOptions} />
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    admins={adminOptions}
+                    canDelete={profile.role === "super_admin"}
+                  />
                 ))}
               </ul>
             </>

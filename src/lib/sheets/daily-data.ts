@@ -69,6 +69,14 @@ function findCol(headers: string[], predicates: ((h: string) => boolean)[]): num
   return normalized.findIndex((h) => predicates.some((predicate) => predicate(h)));
 }
 
+function isActualCostHeader(header: string): boolean {
+  return ["cpp", "cpr", "cpl"].some(
+    (metric) =>
+      header === `${metric} actual` ||
+      (header.startsWith(metric) && header.includes("actual")),
+  );
+}
+
 export async function loadDailyDataSheet(
   fileId: string,
   tabMap: TabMap | null | undefined,
@@ -115,8 +123,7 @@ export function matchDailyDataColumns(headers: string[]): DailyDataColumns {
   ]);
   const revenue = findCol(headers, [
     (h) => h === "total revenue",
-    (h) => h === "revenue",
-    (h) => h.includes("revenue"),
+    (h) => h === "total revenue actual",
   ]);
   const results = findCol(headers, [
     (h) => h === "registrations",
@@ -126,16 +133,13 @@ export function matchDailyDataColumns(headers: string[]): DailyDataColumns {
     (h) => h.includes("purchase"),
     (h) => h.includes("result"),
   ]);
-  const costPerResult = findCol(headers, [
-    (h) => h === "cpr",
-    (h) => h === "cpp",
-    (h) => h === "cpl",
-    (h) => h.includes("cost per registration"),
-    (h) => h.includes("cost per purchase"),
-    (h) => h.includes("cost per lead"),
-    (h) => h.includes("cost per result"),
+  const costPerResult = findCol(headers, [isActualCostHeader]);
+  const ctr = findCol(headers, [
+    (h) => h === "ctr percentage",
+    (h) => h === "ctr",
+    (h) => h === "ctr actual",
+    (h) => h.includes("click through rate"),
   ]);
-  const ctr = findCol(headers, [(h) => h === "ctr", (h) => h === "ctr percentage"]);
   const costHeader = costPerResult >= 0 ? norm(headers[costPerResult] ?? "") : "";
   const resultHeader = results >= 0 ? headers[results] : "Results";
 
@@ -168,9 +172,15 @@ export function summarizeDailyRows(rows: DailyDataRow[], columns: DailyDataColum
     columns.results >= 0
       ? rows.reduce((sum, r) => sum + (parseNumber(r.row[columns.results]) ?? 0), 0)
       : null;
+  const costValues =
+    columns.costPerResult >= 0
+      ? rows
+          .map((r) => parseNumber(r.row[columns.costPerResult]))
+          .filter((v): v is number => v != null)
+      : [];
   const costPerResult =
-    totalSpend != null && totalResults != null && totalResults > 0
-      ? totalSpend / totalResults
+    costValues.length > 0
+      ? costValues.reduce((sum, value) => sum + value, 0) / costValues.length
       : null;
   const ctrValues =
     columns.ctr >= 0

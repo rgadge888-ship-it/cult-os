@@ -106,7 +106,7 @@ export default async function ClientOverviewPage({
           <Card label="Ad spend" value={formatInr(summary?.totalSpend ?? null)} />
           <Card label="Revenue" value={formatInr(summary?.totalRevenue ?? null)} accent />
           <Card label={columns?.costLabel ?? "CPL"} value={formatInr(summary?.costPerResult ?? null)} />
-          <Card label="OS" value={osValue ?? "—"} hint="from Monthly Data" />
+          <Card label="OS monthly" value={osValue ?? "—"} hint="Monthly Data OS column" />
           <Card
             label="Open tasks"
             value={String(openTasks ?? 0)}
@@ -188,14 +188,10 @@ function filterCurrentMonth(rows: DailyDataRow[]): DailyDataRow[] {
 }
 
 function buildCostTrend(rows: DailyDataRow[], columns: DailyDataColumns): TrendPoint[] {
+  if (columns.costPerResult < 0) return [];
   return rows
     .map((row) => {
-      const direct =
-        columns.costPerResult >= 0 ? parseNumber(row.row[columns.costPerResult]) : null;
-      const spend = columns.spend >= 0 ? parseNumber(row.row[columns.spend]) : null;
-      const results = columns.results >= 0 ? parseNumber(row.row[columns.results]) : null;
-      const computed = spend != null && results != null && results > 0 ? spend / results : null;
-      const value = direct ?? computed;
+      const value = parseNumber(row.row[columns.costPerResult]);
       return value != null ? { label: row.label, value } : null;
     })
     .filter(Boolean) as TrendPoint[];
@@ -225,6 +221,7 @@ async function readMonthlyOs(fileId: string, tabMap: Client["tab_map"]): Promise
   const osIdx = headers.findIndex(
     (h) =>
       h === "os" ||
+      h === "os monthly" ||
       h.includes("overall score") ||
       h.includes("overall status") ||
       h.includes("overall summary"),
@@ -266,7 +263,7 @@ function TrendPanel({
         </div>
         <div className="mt-5">
           {points.length >= 2 ? (
-            <Sparkline points={points} />
+            <Sparkline points={points} valuePrefix={valuePrefix} valueSuffix={valueSuffix} />
           ) : (
             <div className="flex h-32 items-center justify-center rounded-md border border-zinc-900 text-sm text-zinc-500">
               Not enough daily values yet.
@@ -278,7 +275,15 @@ function TrendPanel({
   );
 }
 
-function Sparkline({ points }: { points: TrendPoint[] }) {
+function Sparkline({
+  points,
+  valuePrefix = "",
+  valueSuffix = "",
+}: {
+  points: TrendPoint[];
+  valuePrefix?: string;
+  valueSuffix?: string;
+}) {
   const values = points.map((p) => p.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -301,7 +306,15 @@ function Sparkline({ points }: { points: TrendPoint[] }) {
         />
         {coords.map((coord, i) => {
           const [x, y] = coord.split(",");
-          return <circle key={i} cx={x} cy={y} r="1.4" fill="rgb(251 146 60)" />;
+          const point = points[i];
+          const title = `${point.label}: ${valuePrefix}${formatCompact(point.value)}${valueSuffix}`;
+          return (
+            <g key={i} className="cursor-crosshair">
+              <title>{title}</title>
+              <circle cx={x} cy={y} r="1.4" fill="rgb(251 146 60)" />
+              <circle cx={x} cy={y} r="4.5" fill="transparent" />
+            </g>
+          );
         })}
       </svg>
       <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-widest text-zinc-600">

@@ -3,25 +3,42 @@ import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { NewTaskForm } from "./new-task-form";
+import { TaskColumnFilters, type TaskColumnFilterValues } from "./task-column-filters";
 import { TaskRow, type TaskRowData } from "./task-row";
 import { TASK_TYPE_LABEL } from "@/lib/tasks";
-import type { Task } from "@/lib/db/types";
+import type { Task, TaskPriority, TaskStatus } from "@/lib/db/types";
 
 const VALID_VIEWS = new Set(["all", "mine", "unassigned", "open"]);
 const VALID_TYPES = new Set(["all", "weekly", "mom"]);
+const VALID_STATUSES = new Set(["all", "todo", "in_progress", "blocked", "done"]);
+const VALID_PRIORITIES = new Set(["all", "low", "medium", "high", "urgent"]);
 
 type TaskTypeFilter = "all" | "weekly" | "mom";
 
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; type?: string; client?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    type?: string;
+    status?: string;
+    client?: string;
+    assignee?: string;
+    priority?: string;
+  }>;
 }) {
   const { user, profile } = await requireUser({ adminOnly: true });
   const sp = await searchParams;
   const view = VALID_VIEWS.has(sp.view ?? "") ? (sp.view as string) : "open";
   const type = VALID_TYPES.has(sp.type ?? "") ? (sp.type as TaskTypeFilter) : "all";
-  const clientFilter = sp.client ?? null;
+  const statusFilter = VALID_STATUSES.has(sp.status ?? "")
+    ? (sp.status as TaskStatus | "all")
+    : "all";
+  const clientFilter = sp.client ?? "";
+  const assigneeFilter = sp.assignee ?? "";
+  const priorityFilter = VALID_PRIORITIES.has(sp.priority ?? "")
+    ? (sp.priority as TaskPriority | "all")
+    : "all";
 
   const supabase = await createClient();
 
@@ -34,10 +51,20 @@ export default async function TasksPage({
 
   if (view === "mine") query = query.eq("assignee_id", user.id);
   if (view === "unassigned") query = query.is("assignee_id", null);
-  if (view === "open") query = query.neq("status", "done");
+  if (statusFilter !== "all") {
+    query = query.eq("status", statusFilter);
+  } else if (view === "open") {
+    query = query.neq("status", "done");
+  }
   if (type === "weekly") query = query.eq("task_type", "weekly");
   if (type === "mom") query = query.eq("task_type", "client_mom");
-  if (clientFilter) query = query.eq("client_id", clientFilter);
+  if (clientFilter === "none") query = query.is("client_id", null);
+  if (clientFilter && clientFilter !== "none") query = query.eq("client_id", clientFilter);
+  if (assigneeFilter === "unassigned") query = query.is("assignee_id", null);
+  if (assigneeFilter && assigneeFilter !== "unassigned") {
+    query = query.eq("assignee_id", assigneeFilter);
+  }
+  if (priorityFilter !== "all") query = query.eq("priority", priorityFilter);
 
   const [{ data: tasks }, { data: clients }, { data: admins }] = await Promise.all([
     query,
@@ -57,6 +84,15 @@ export default async function TasksPage({
     id: a.id,
     label: a.full_name ?? a.email.split("@")[0],
   }));
+  const clientOptions = (clients ?? []).map((c) => ({ id: c.id, name: c.name }));
+  const columnFilters: TaskColumnFilterValues = {
+    view,
+    type,
+    status: statusFilter,
+    client: clientFilter,
+    assignee: assigneeFilter,
+    priority: priorityFilter,
+  };
 
   const rows: TaskRowData[] = ((tasks ?? []) as Task[]).map((t) => ({
     id: t.id,
@@ -89,56 +125,59 @@ export default async function TasksPage({
             what is getting done, by whom, by when
           </p>
         </div>
-        <NewTaskForm clients={clients ?? []} admins={adminOptions} />
+        <NewTaskForm clients={clientOptions} admins={adminOptions} />
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-2">
-        <ViewLink current={view} type={type} value="open" label="Open" count={counts.open} />
-        <ViewLink current={view} type={type} value="mine" label="My tasks" count={counts.mine} />
+        <ViewLink filters={columnFilters} value="open" label="Open" count={counts.open} />
+        <ViewLink filters={columnFilters} value="mine" label="My tasks" count={counts.mine} />
         <ViewLink
-          current={view}
-          type={type}
+          filters={columnFilters}
           value="unassigned"
           label="Unassigned"
           count={counts.unassigned}
         />
-        <ViewLink current={view} type={type} value="all" label="All" count={counts.all} />
+        <ViewLink filters={columnFilters} value="all" label="All" count={counts.all} />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <TypeLink current={type} view={view} value="all" label="All types" />
-        <TypeLink current={type} view={view} value="weekly" label="Weekly" />
-        <TypeLink current={type} view={view} value="mom" label="Client / MOM" />
+        <TypeLink filters={columnFilters} value="all" label="All types" />
+        <TypeLink filters={columnFilters} value="weekly" label="Weekly" />
+        <TypeLink filters={columnFilters} value="mom" label="Client / MOM" />
       </div>
 
       <div className="mt-6">
         <SectionHeader label={`${view} · ${typeLabel(type)} · ${rows.length}`} className="mb-3" />
         <Panel>
+          <div className="hidden grid-cols-12 gap-3 border-b border-zinc-900 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-600 sm:grid">
+            <span className="col-span-2">Status</span>
+            <span className="col-span-3">Task</span>
+            <span className="col-span-1">Type</span>
+            <span className="col-span-2">Client</span>
+            <span className="col-span-2">Assignee</span>
+            <span className="col-span-2 text-right">Added · due</span>
+          </div>
+          <TaskColumnFilters
+            values={columnFilters}
+            clients={clientOptions}
+            admins={adminOptions}
+          />
           {rows.length === 0 ? (
             <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              No tasks here. Create one with New task.
+              No tasks match these filters.
             </div>
           ) : (
-            <>
-              <div className="hidden grid-cols-12 gap-3 border-b border-zinc-900 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-600 sm:grid">
-                <span className="col-span-2">Status</span>
-                <span className="col-span-3">Task</span>
-                <span className="col-span-1">Type</span>
-                <span className="col-span-2">Client</span>
-                <span className="col-span-2">Assignee</span>
-                <span className="col-span-2 text-right">Added · due</span>
-              </div>
               <ul>
                 {rows.map((t) => (
                   <TaskRow
                     key={t.id}
                     task={t}
                     admins={adminOptions}
+                    clients={clientOptions}
                     canDelete={profile.role === "super_admin"}
                   />
                 ))}
               </ul>
-            </>
           )}
         </Panel>
       </div>
@@ -174,22 +213,20 @@ async function getCounts(
 }
 
 function ViewLink({
-  current,
-  type,
+  filters,
   value,
   label,
   count,
 }: {
-  current: string;
-  type: TaskTypeFilter;
+  filters: TaskColumnFilterValues;
   value: string;
   label: string;
   count: number;
 }) {
-  const active = current === value;
+  const active = filters.view === value;
   return (
     <Link
-      href={taskHref({ view: value, type })}
+      href={taskHref({ ...filters, view: value })}
       className={`inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs uppercase tracking-widest ${
         active
           ? "border-orange-500 bg-orange-950/30 text-orange-300"
@@ -203,20 +240,18 @@ function ViewLink({
 }
 
 function TypeLink({
-  current,
-  view,
+  filters,
   value,
   label,
 }: {
-  current: TaskTypeFilter;
-  view: string;
+  filters: TaskColumnFilterValues;
   value: TaskTypeFilter;
   label: string;
 }) {
-  const active = current === value;
+  const active = filters.type === value;
   return (
     <Link
-      href={taskHref({ view, type: value })}
+      href={taskHref({ ...filters, type: value })}
       className={`inline-flex h-8 items-center rounded-md border px-3 text-xs uppercase tracking-widest ${
         active
           ? "border-zinc-500 bg-zinc-900 text-zinc-100"
@@ -228,10 +263,14 @@ function TypeLink({
   );
 }
 
-function taskHref({ view, type }: { view: string; type: TaskTypeFilter }) {
+function taskHref(filters: TaskColumnFilterValues) {
   const params = new URLSearchParams();
-  params.set("view", view);
-  if (type !== "all") params.set("type", type);
+  params.set("view", filters.view);
+  if (filters.type !== "all") params.set("type", filters.type);
+  if (filters.status !== "all") params.set("status", filters.status);
+  if (filters.client) params.set("client", filters.client);
+  if (filters.assignee) params.set("assignee", filters.assignee);
+  if (filters.priority !== "all") params.set("priority", filters.priority);
   return `/admin/tasks?${params.toString()}`;
 }
 

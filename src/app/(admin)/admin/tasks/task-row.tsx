@@ -1,9 +1,9 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
-import { useTransition } from "react";
-import { deleteTask, updateTaskStatus, updateTaskField } from "./actions";
-import { TASK_STATUS_OPTIONS, TASK_TYPE_LABEL } from "@/lib/tasks";
+import { Check, Pencil, Trash2, X } from "lucide-react";
+import { useState, useTransition } from "react";
+import { deleteTask, updateTaskDetails, updateTaskStatus, updateTaskField } from "./actions";
+import { TASK_STATUS_OPTIONS, TASK_TYPE_LABEL, TASK_TYPE_OPTIONS } from "@/lib/tasks";
 import type { TaskPriority, TaskStatus, TaskType } from "@/lib/db/types";
 
 const STATUS_COLOR: Record<TaskStatus, string> = {
@@ -37,13 +37,17 @@ export type TaskRowData = {
 export function TaskRow({
   task,
   admins,
+  clients,
   canDelete,
 }: {
   task: TaskRowData;
   admins: { id: string; label: string }[];
+  clients: { id: string; name: string }[];
   canDelete: boolean;
 }) {
   const [pending, start] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dueClass = (() => {
     if (!task.due_date) return "text-zinc-600";
@@ -63,6 +67,156 @@ export function TaskRow({
     start(async () => {
       await deleteTask(task.id);
     });
+  }
+
+  function onSave(formData: FormData) {
+    setError(null);
+    start(async () => {
+      try {
+        await updateTaskDetails(task.id, formData);
+        setEditing(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to update task.");
+      }
+    });
+  }
+
+  if (editing) {
+    return (
+      <li
+        className={`border-b border-zinc-900/60 px-4 py-4 last:border-b-0 ${
+          pending ? "opacity-60" : ""
+        }`}
+      >
+        <form action={onSave} className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+            <Field label="Task">
+              <input
+                name="title"
+                required
+                defaultValue={task.title}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus:border-orange-500 focus:outline-none"
+              />
+            </Field>
+            <Field label="Status">
+              <select
+                name="status"
+                defaultValue={task.status}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              >
+                {TASK_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Type">
+              <select
+                name="task_type"
+                defaultValue={task.task_type}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              >
+                {TASK_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Priority">
+              <select
+                name="priority"
+                defaultValue={task.priority}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Description">
+            <textarea
+              name="description"
+              defaultValue={task.description ?? ""}
+              rows={2}
+              className="w-full resize-y rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-orange-500 focus:outline-none"
+            />
+          </Field>
+          <div className="grid gap-3 lg:grid-cols-5">
+            <Field label="Client">
+              <select
+                name="client_id"
+                defaultValue={task.client_id ?? ""}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              >
+                <option value="">No client</option>
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Assignee">
+              <select
+                name="assignee_id"
+                defaultValue={task.assignee_id ?? ""}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              >
+                <option value="">Unassigned</option>
+                {admins.map((admin) => (
+                  <option key={admin.id} value={admin.id}>
+                    {admin.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Date added">
+              <input
+                name="added_date"
+                type="date"
+                defaultValue={dateInputValue(task.created_at)}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              />
+            </Field>
+            <Field label="Due date">
+              <input
+                name="due_date"
+                type="date"
+                defaultValue={task.due_date ?? ""}
+                className="h-9 w-full rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-xs text-zinc-200 focus:border-orange-500 focus:outline-none"
+              />
+            </Field>
+            <div className="flex items-end gap-2">
+              <button
+                type="submit"
+                disabled={pending}
+                className="inline-flex h-9 items-center gap-2 rounded border border-emerald-600/50 bg-emerald-950/20 px-3 font-mono text-[10px] uppercase tracking-widest text-emerald-300 hover:border-emerald-500 disabled:opacity-50"
+              >
+                <Check className="size-3.5" aria-hidden="true" />
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setEditing(false);
+                }}
+                disabled={pending}
+                className="inline-flex h-9 items-center gap-2 rounded border border-zinc-800 px-3 font-mono text-[10px] uppercase tracking-widest text-zinc-400 hover:border-zinc-600 disabled:opacity-50"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+                Cancel
+              </button>
+            </div>
+          </div>
+          {error ? <p className="text-xs text-red-400">{error}</p> : null}
+        </form>
+      </li>
+    );
   }
 
   return (
@@ -119,11 +273,7 @@ export function TaskRow({
         ))}
       </select>
 
-      <div
-        className={`col-span-2 grid ${
-          canDelete ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-2"
-        } gap-2 text-right font-mono text-[11px]`}
-      >
+      <div className="col-span-2 grid grid-cols-[1fr_1fr_auto_auto] gap-2 text-right font-mono text-[11px]">
         <div className="text-zinc-500" title={task.created_at}>
           <span className="block text-[9px] uppercase tracking-widest text-zinc-700">
             Added
@@ -137,6 +287,16 @@ export function TaskRow({
           {task.due_date ? formatDate(task.due_date) : "—"}{" "}
           <span className={`ml-1 ${PRIORITY_COLOR[task.priority]}`}>•</span>
         </div>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          disabled={pending}
+          title="Edit task"
+          className="mt-3 inline-flex size-7 items-center justify-center rounded border border-zinc-800 text-zinc-500 hover:border-orange-500/60 hover:text-orange-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Pencil className="size-3.5" aria-hidden="true" />
+          <span className="sr-only">Edit task</span>
+        </button>
         {canDelete ? (
           <button
             type="button"
@@ -154,8 +314,29 @@ export function TaskRow({
   );
 }
 
+function dateInputValue(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
   const m = d.toLocaleString("en-IN", { month: "short" });
   return `${m} ${d.getDate()}`;
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="space-y-1">
+      <span className="block font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
 }

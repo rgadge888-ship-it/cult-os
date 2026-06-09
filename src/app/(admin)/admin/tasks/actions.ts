@@ -90,6 +90,52 @@ export async function updateTaskField(
   revalidateTaskPaths(task?.client_id ?? null);
 }
 
+export async function updateTaskDetails(taskId: string, formData: FormData) {
+  const { user } = await requireUser({ adminOnly: true });
+  const supabase = await createClient();
+
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) {
+    throw new Error("Title is required.");
+  }
+
+  const previous = await supabase
+    .from("tasks")
+    .select("client_id")
+    .eq("id", taskId)
+    .single();
+
+  const taskTypeRaw = String(formData.get("task_type") ?? "weekly");
+  const task_type: TaskType = taskTypeRaw === "client_mom" ? "client_mom" : "weekly";
+  const priorityRaw = String(formData.get("priority") ?? "medium") as TaskPriority;
+  const statusRaw = String(formData.get("status") ?? "todo") as TaskStatus;
+  const created_at = toCreatedAt(String(formData.get("added_date") ?? "").trim());
+  const due_date = (String(formData.get("due_date") ?? "") || null) as string | null;
+  const client_id = (String(formData.get("client_id") ?? "") || null) as string | null;
+
+  const { data: task } = await supabase
+    .from("tasks")
+    .update({
+      title,
+      description: String(formData.get("description") ?? "").trim() || null,
+      client_id,
+      assignee_id: (String(formData.get("assignee_id") ?? "") || null) as string | null,
+      priority: priorityRaw,
+      task_type,
+      status: statusRaw,
+      due_date,
+      completed_at: statusRaw === "done" ? new Date().toISOString() : null,
+      completed_by: statusRaw === "done" ? user.id : null,
+      ...(created_at ? { created_at } : {}),
+    })
+    .eq("id", taskId)
+    .select("client_id")
+    .single();
+
+  revalidateTaskPaths(previous.data?.client_id ?? null);
+  revalidateTaskPaths(task?.client_id ?? null);
+}
+
 export async function deleteTask(taskId: string) {
   const { profile } = await requireUser({ adminOnly: true });
   if (profile.role !== "super_admin") {

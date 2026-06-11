@@ -17,7 +17,6 @@ export async function generateWeeklyReport(
   formData: FormData,
 ): Promise<GenerateState> {
   void prev;
-  void formData;
   const { user, profile } = await requireUser({ adminOnly: true });
   if (!can(profile.role, "generate_report")) {
     return { error: "You don't have permission to generate reports." };
@@ -34,12 +33,18 @@ export async function generateWeeklyReport(
     return { error: "This client has no Mainsheet linked." };
   }
 
+  const selectedRange = String(formData.get("date_range") ?? "").trim();
+  if (!selectedRange) {
+    return { error: "Select a weekly date range first." };
+  }
+
   let data;
   try {
     data = await buildWeeklyReport(
       user.id,
       client.mainsheet_file_id,
       (client.tab_map ?? {}) as Record<string, string>,
+      selectedRange,
     );
   } catch (e) {
     if (e instanceof Error && e.message === "google_not_connected") {

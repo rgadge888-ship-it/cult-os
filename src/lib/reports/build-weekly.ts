@@ -1,6 +1,6 @@
 import { getSheetMetadata, getSheetValues } from "@/lib/google/sheets";
 import { resolveTabTitle, type TabMap } from "@/lib/sheets/tabs";
-import { matchColumns, parseNumber } from "./parse";
+import { matchColumns, parseDateRange, parseNumber } from "./parse";
 import type {
   CreativeRow,
   FunnelSnapshot,
@@ -9,6 +9,12 @@ import type {
   WebinarSnapshot,
   WeeklyReportData,
 } from "@/lib/db/types";
+
+export type WeeklyReportRangeOption = {
+  range: string;
+  week_start_date: string | null;
+  week_end_date: string | null;
+};
 
 // Pick the row that looks like a header: the one with the most non-empty cells
 // among the first few rows (handles sheets where row 1 is section labels).
@@ -37,21 +43,9 @@ function rowToMetrics(
   return m;
 }
 
-/**
- * Build a weekly report from a client's Mainsheet. Reads the "Weekly Datasheet"
- * tab directly (Option A — Rahul's pre-aggregated weekly rows), using the latest
- * row as the current week and the row above as last week.
- */
-export async function buildWeeklyReport(
-  userId: string,
-  fileId: string,
-  tabMap: TabMap = {},
-): Promise<WeeklyReportData> {
-  const warnings: string[] = [];
+async function readWeeklyRows(userId: string, fileId: string, tabMap: TabMap) {
   const meta = await getSheetMetadata(userId, fileId);
   const titles = meta.tabs.map((t) => t.title);
-
-  // --- Weekly metrics table (the core) ---
   const weeklyTab = resolveTabTitle("weekly", tabMap, titles);
   if (!weeklyTab) {
     throw new Error("No 'Weekly' tab found in the Mainsheet.");
@@ -62,7 +56,59 @@ export async function buildWeeklyReport(
   });
   const headerIdx = findHeaderRow(weeklyRows);
   const headers = weeklyRows[headerIdx] ?? [];
-  const { map, acqLabel, unmatchedHeaders } = matchColumns(headers);
+  const columnMatch = matchColumns(headers);
+  const drIdx = columnMatch.map.date_range ?? 0;
+  const dataRows = weeklyRows
+    .slice(headerIdx + 1)
+    .filter((r) => (r[drIdx] ?? "").toString().trim() !== "");
+
+  return {
+    titles,
+    weeklyTab,
+    columnMatch,
+    drIdx,
+    dataRows,
+  };
+}
+
+export async function listWeeklyReportRanges(
+  userId: string,
+  fileId: string,
+  tabMap: TabMap = {},
+): Promise<WeeklyReportRangeOption[]> {
+  const { dataRows, drIdx } = await readWeeklyRows(userId, fileId, tabMap);
+  return dataRows
+    .map((row) => {
+      const range = (row[drIdx] ?? "").toString().trim();
+      const parsed = parseDateRange(range);
+      return {
+        range,
+        week_start_date: parsed?.start ?? null,
+        week_end_date: parsed?.end ?? null,
+      };
+    })
+    .filter((option) => option.range !== "")
+    .reverse();
+}
+
+/**
+ * Build a weekly report from a client's Mainsheet. Reads the "Weekly Datasheet"
+ * tab directly (Option A — Rahul's pre-aggregated weekly rows), using the latest
+ * row as the current week and the row above as last week.
+ */
+export async function buildWeeklyReport(
+  userId: string,
+  fileId: string,
+  tabMap: TabMap = {},
+  selectedRange?: string,
+): Promise<WeeklyReportData> {
+  const warnings: string[] = [];
+  const { titles, weeklyTab, columnMatch, drIdx, dataRows } = await readWeeklyRows(
+    userId,
+    fileId,
+    tabMap,
+  );
+  const { map, acqLabel, unmatchedHeaders } = columnMatch;
 
   if (map.date_range == null) {
     warnings.push("Couldn't find a Date Range column in the Weekly tab.");
@@ -71,17 +117,19 @@ export async function buildWeeklyReport(
     warnings.push(`Unmapped weekly columns: ${unmatchedHeaders.join(", ")}`);
   }
 
-  const drIdx = map.date_range ?? 0;
-  const dataRows = weeklyRows
-    .slice(headerIdx + 1)
-    .filter((r) => (r[drIdx] ?? "").toString().trim() !== "");
-
   if (dataRows.length === 0) {
     throw new Error("No data rows found in the Weekly tab.");
   }
 
-  const currentRow = dataRows[dataRows.length - 1];
-  const previousRow = dataRows.length > 1 ? dataRows[dataRows.length - 2] : null;
+  const selectedIdx = selectedRange
+    ? dataRows.findIndex((row) => (row[drIdx] ?? "").toString().trim() === selectedRange)
+    : dataRows.length - 1;
+  if (selectedIdx < 0) {
+    throw new Error("Selected week was not found in the Weekly tab. Refresh and try again.");
+  }
+
+  const currentRow = dataRows[selectedIdx];
+  const previousRow = selectedIdx > 0 ? dataRows[selectedIdx - 1] : null;
 
   const currentMetrics = rowToMetrics(currentRow, map);
   const previousMetrics = previousRow ? rowToMetrics(previousRow, map) : null;

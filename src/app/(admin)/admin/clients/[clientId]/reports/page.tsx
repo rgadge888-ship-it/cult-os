@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { requireUser } from "@/lib/auth/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, SectionHeader } from "@/components/ui/section";
 import { StatusPill } from "@/components/ui/status-pill";
 import { GenerateReportButton } from "./generate-button";
+import { listWeeklyReportRanges, type WeeklyReportRangeOption } from "@/lib/reports/build-weekly";
 import type { Client, WeeklyReport } from "@/lib/db/types";
 
 export default async function ClientReportsPage({
@@ -12,10 +14,11 @@ export default async function ClientReportsPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
+  const { user } = await requireUser({ adminOnly: true });
   const supabase = await createClient();
 
   const [{ data: client }, { data: reports }] = await Promise.all([
-    supabase.from("clients").select("id, mainsheet_file_id").eq("id", clientId).single(),
+    supabase.from("clients").select("id, mainsheet_file_id, tab_map").eq("id", clientId).single(),
     supabase
       .from("weekly_reports")
       .select("id, week_start_date, week_end_date, status, generated_at")
@@ -26,18 +29,43 @@ export default async function ClientReportsPage({
 
   if (!client) notFound();
 
-  const c = client as Pick<Client, "id" | "mainsheet_file_id">;
+  const c = client as Pick<Client, "id" | "mainsheet_file_id" | "tab_map">;
   const reportRows = (reports ?? []) as Pick<
     WeeklyReport,
     "id" | "week_start_date" | "week_end_date" | "status" | "generated_at"
   >[];
+  let weeklyOptions: WeeklyReportRangeOption[] = [];
+  let weeklyOptionsError: string | null = null;
+  if (c.mainsheet_file_id) {
+    try {
+      weeklyOptions = await listWeeklyReportRanges(
+        user.id,
+        c.mainsheet_file_id,
+        c.tab_map,
+      );
+    } catch (e) {
+      weeklyOptionsError = e instanceof Error ? e.message : "Could not read weekly ranges.";
+    }
+  }
+  const reportStatusByStart = Object.fromEntries(
+    reportRows.map((report) => [report.week_start_date, report.status]),
+  );
 
   return (
     <div>
       <SectionHeader
         label="weekly reports"
         className="mb-3"
-        action={c.mainsheet_file_id ? <GenerateReportButton clientId={c.id} /> : null}
+        action={
+          c.mainsheet_file_id ? (
+            <GenerateReportButton
+              clientId={c.id}
+              options={weeklyOptions}
+              optionsError={weeklyOptionsError}
+              reportStatusByStart={reportStatusByStart}
+            />
+          ) : null
+        }
       />
       <Panel>
         {reportRows.length === 0 ? (
